@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPSCC · Resource & Shift Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap">
+<link rel="stylesheet" href="assets/mpscc.css">
+<style>
+/* ---- page-specific layout only; everything else reuses mpscc.css ---- */
+html,body{height:100%}
+.app{display:flex;flex-direction:column;min-height:100vh}
+.topbar .weekpill{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.8rem;
+  padding:5px 12px;border-radius:999px;border:1px solid var(--hair);background:var(--panel);color:var(--text)}
+.topbar .weekpill b{color:var(--accent-2)}
+.topbar .clock{margin-left:auto}
+.topbar .actions{display:flex;gap:8px}
+
+.content{flex:1;padding:14px;display:flex;flex-direction:column;gap:14px}
+
+/* summary stat cards */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+@media(max-width:1000px){.stats{grid-template-columns:repeat(2,1fr)}}
+.scard{padding:16px}
+.scard .n{font-size:1.9rem}
+.scard .delta{font-family:var(--mono);font-size:.72rem;margin-top:4px}
+.up{color:var(--st-available)} .down{color:var(--p1)} .warn{color:var(--p2)}
+
+.row2{display:grid;grid-template-columns:1.35fr 1fr;gap:14px}
+.row3{display:grid;grid-template-columns:1fr 1.4fr;gap:14px}
+@media(max-width:1000px){.row2,.row3{grid-template-columns:1fr}}
+
+/* ---- heatmap ---- */
+.hm-wrap{overflow-x:auto}
+.heatmap{display:grid;grid-template-columns:34px repeat(24,1fr);gap:2px;min-width:640px}
+.hm-h{font-size:.6rem;color:var(--text-faint);text-align:center;font-family:var(--mono);padding-bottom:2px}
+.hm-d{font-size:.68rem;color:var(--text-faint);display:flex;align-items:center;justify-content:flex-end;padding-right:5px;font-weight:600}
+.hm-c{aspect-ratio:1/1;border-radius:3px;position:relative;transition:background .5s ease,transform .15s;cursor:default;min-height:15px}
+.hm-c:hover{transform:scale(1.35);z-index:5;outline:1px solid #fff}
+.hm-c[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:120%;left:50%;transform:translateX(-50%);
+  white-space:nowrap;background:rgba(7,11,22,.96);border:1px solid var(--hair-strong);border-radius:7px;
+  padding:5px 9px;font-size:.68rem;font-family:var(--mono);color:var(--text);z-index:20;pointer-events:none}
+
+/* ---- firearms line chart ---- */
+.chartbox{position:relative}
+.chartbox svg{width:100%;height:210px;display:block}
+.axlbl{font-family:var(--mono);font-size:9px;fill:var(--text-faint)}
+
+/* ---- station balance ---- */
+.stations{display:flex;flex-direction:column;gap:9px}
+.sbar{display:grid;grid-template-columns:120px 1fr 54px;gap:10px;align-items:center;font-size:.8rem}
+.sbar .nm{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{position:relative;height:20px;border-radius:6px;background:var(--panel-2);border:1px solid var(--hair);overflow:hidden}
+.track .cap{position:absolute;inset:0;border-right:2px dashed var(--hair-strong)}
+.track .fillb{position:absolute;left:0;top:0;bottom:0;border-radius:6px 0 0 6px;transition:width .7s cubic-bezier(.2,.9,.3,1)}
+.sbar .flag{font-family:var(--mono);font-size:.72rem;text-align:right;font-weight:600}
+
+/* ---- roster grid ---- */
+.roster{overflow:auto;max-height:340px}
+.rgrid{display:grid;grid-template-columns:96px repeat(7,1fr);gap:4px;min-width:520px}
+.rg-h{font-size:.66rem;color:var(--text-faint);text-align:center;font-weight:600;padding-bottom:2px}
+.rg-o{font-size:.72rem;color:var(--text-dim);display:flex;flex-direction:column;justify-content:center;padding-right:6px;line-height:1.15}
+.rg-o .col{font-family:var(--mono);font-size:.64rem;color:var(--text-faint)}
+.cell{border-radius:6px;padding:6px 4px;text-align:center;font-size:.62rem;font-weight:700;color:#fff;
+  cursor:pointer;transition:transform .12s,filter .15s;user-select:none;letter-spacing:.03em}
+.cell:hover{transform:translateY(-2px);filter:brightness(1.15)}
+.cell.OFF{background:var(--panel-2);color:var(--text-faint);font-weight:500}
+.cell.EARLY{background:linear-gradient(135deg,#22c55e,#16a34a)}
+.cell.DAY{background:linear-gradient(135deg,#eab308,#ca8a04);color:#1a1a1a}
+.cell.LATE{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.cell.NIGHT{background:linear-gradient(135deg,#6366f1,#4338ca)}
+.cellpop{animation:cellpop .4s ease}
+@keyframes cellpop{0%{transform:scale(.6);opacity:0}100%{transform:none;opacity:1}}
+
+/* ---- fleet ---- */
+.fleet{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+@media(max-width:900px){.fleet{grid-template-columns:repeat(2,1fr)}}
+.fcard{border:1px solid var(--hair);border-radius:12px;padding:14px;background:var(--panel);text-align:center}
+.fcard .ic{font-size:1.6rem}
+.donut{width:88px;height:88px;margin:6px auto 4px;display:block}
+.fcard .pct{font-size:1.2rem;font-weight:750;font-variant-numeric:tabular-nums}
+.fcard .sub{font-family:var(--mono);font-size:.68rem;color:var(--text-faint)}
+
+/* ---- rules side panel ---- */
+.rules{position:fixed;top:0;right:0;bottom:0;width:360px;background:rgba(10,14,26,.96);
+  backdrop-filter:blur(18px);border-left:1px solid var(--hair-strong);box-shadow:var(--shadow);
+  z-index:120;transform:translateX(102%);transition:transform .3s cubic-bezier(.2,.9,.3,1);
+  display:flex;flex-direction:column;padding:20px;overflow:auto}
+.rules.open{transform:none}
+.rules h3{display:flex;align-items:center;justify-content:space-between}
+.rules .close{cursor:pointer;font-size:1.2rem;color:var(--text-dim);background:none;border:0}
+.ruleitem{margin:16px 0}
+.ruleitem label{display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:7px}
+.ruleitem label b{font-family:var(--mono);color:var(--accent-2)}
+.ruleitem input[type=range]{width:100%;accent-color:var(--accent)}
+.ruleitem .hintt{font-size:.7rem;color:var(--text-faint);margin-top:4px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:110;opacity:0;pointer-events:none;transition:opacity .3s}
+.overlay.on{opacity:1;pointer-events:auto}
+
+.legend .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.spin{animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(10,16,28,.96);border:1px solid var(--hair-strong);border-radius:12px;
+  padding:12px 20px;font-size:.88rem;box-shadow:var(--shadow);opacity:0;pointer-events:none;
+  transition:all .3s;z-index:200;display:flex;align-items:center;gap:10px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== TOP BAR ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="badge">🛡</span>
+      <span>MPSCC<small>Resource &amp; Shift Planner · Duty Office</small></span>
+    </div>
+    <span class="weekpill">Week of <b id="weekOf">06 Jul 2026</b></span>
+    <span class="pill">40,000 officers · 110 stations</span>
+    <div class="actions">
+      <button class="btn primary" id="genBtn">⚙ Generate roster</button>
+      <button class="btn" id="rulesBtn">Rules ⚙</button>
+    </div>
+    <span class="clock tnum" id="clock">--:--:--</span>
+    <a href="index.html">← Design Portal</a>
+  </header>
+
+  <div class="content">
+
+    <!-- SUMMARY STATS -->
+    <div class="stats">
+      <div class="panel scard stat"><div class="n tnum" id="stOnShift">—</div><div class="l">on-shift now</div><div class="delta up" id="stOnShiftD">roster ready</div></div>
+      <div class="panel scard stat"><div class="n tnum" id="stFirearms">—</div><div class="l">firearms on cover</div><div class="delta up" id="stFirearmsD">≥ min</div></div>
+      <div class="panel scard stat"><div class="n tnum" id="stUnder">—</div><div class="l">stations under-staffed</div><div class="delta warn" id="stUnderD">of 110</div></div>
+      <div class="panel scard stat"><div class="n tnum" id="stCover">—</div><div class="l">demand met</div><div class="delta up" id="stCoverD">hour-cells green</div></div>
+      <div class="panel scard stat"><div class="n tnum" id="stFleet">—</div><div class="l">vehicles in use</div><div class="delta up" id="stFleetD">of 10,390</div></div>
+    </div>
+
+    <!-- ROW: heatmap + firearms -->
+    <div class="row2">
+      <div class="panel">
+        <div class="pcap" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="panel-title" style="margin:0">Demand vs Staffed · hour × day</div>
+          <div class="legend">
+            <span><span class="sw" style="background:#16a34a"></span>met</span>
+            <span><span class="sw" style="background:#eab308"></span>tight</span>
+            <span><span class="sw" style="background:#f59e0b"></span>short</span>
+            <span><span class="sw" style="background:#dc2626"></span>under</span>
+          </div>
+        </div>
+        <div class="hm-wrap"><div class="heatmap" id="heatmap"></div></div>
+        <p style="margin:10px 0 0;font-size:.76rem">Cells compare rostered officers to demand curve <span class="mono">D(day,hour)</span>. Fri/Sat evenings peak; trough 23:00–06:00.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Firearms cover across 24h</div>
+        <div class="chartbox"><svg id="faChart" viewBox="0 0 480 210" preserveAspectRatio="none"></svg></div>
+        <div class="legend" style="margin-top:6px">
+          <span><span class="sw" style="background:var(--accent-2)"></span>armed on-shift</span>
+          <span><span class="sw" style="background:var(--p1)"></span>minimum cover <b class="mono" id="minLbl">1500</b></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW: station balance + roster grid -->
+    <div class="row3">
+      <div class="panel">
+        <div class="panel-title">Station balance · staffed vs capacity</div>
+        <div class="stations" id="stations"></div>
+      </div>
+
+      <div class="panel">
+        <div class="pcap" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="panel-title" style="margin:0">Roster grid · officers × days</div>
+          <div class="legend">
+            <span><span class="sw" style="background:#22c55e"></span>EARLY</span>
+            <span><span class="sw" style="background:#eab308"></span>DAY</span>
+            <span><span class="sw" style="background:#f59e0b"></span>LATE</span>
+            <span><span class="sw" style="background:#6366f1"></span>NIGHT</span>
+          </div>
+        </div>
+        <p style="margin:-4px 0 10px;font-size:.74rem">Click a cell to cycle EARLY → DAY → LATE → NIGHT → OFF (drag-to-reassign feel).</p>
+        <div class="roster scroll"><div class="rgrid" id="rgrid"></div></div>
+      </div>
+    </div>
+
+    <!-- FLEET -->
+    <div class="panel">
+      <div class="panel-title">Fleet utilisation · vehicles in use vs available</div>
+      <div class="fleet" id="fleet"></div>
+    </div>
+
+    <div class="footer">MPSCC prototype · Persona 3 Resource &amp; Shift Planner — rules engine per doc 06. Mockup only.</div>
+  </div>
+</div>
+
+<!-- RULES SIDE PANEL -->
+<div class="overlay" id="overlay"></div>
+<aside class="rules" id="rules">
+  <h3>Rules engine <button class="close" id="rulesClose">✕</button></h3>
+  <p style="font-size:.8rem">Tune the constraint weights, then <b>Generate roster</b> to re-run.</p>
+
+  <div class="ruleitem">
+    <label>Firearms minimum cover <b id="rFaVal">1500</b></label>
+    <input type="range" id="rFa" min="800" max="3000" step="100" value="1500">
+    <div class="hintt">Hard constraint — armed officers on-shift every hour (of 6,000).</div>
+  </div>
+  <div class="ruleitem">
+    <label>Min rest between shifts <b id="rRestVal">11h</b></label>
+    <input type="range" id="rRest" min="8" max="16" step="1" value="11">
+    <div class="hintt">Statutory-style gap enforced by the greedy allocator.</div>
+  </div>
+  <div class="ruleitem">
+    <label>Peak demand weight <b id="rPeakVal">1.40</b></label>
+    <input type="range" id="rPeak" min="1.0" max="1.8" step="0.05" value="1.40">
+    <div class="hintt">Evening peak multiplier (18:00–23:00).</div>
+  </div>
+  <div class="ruleitem">
+    <label>Night trough weight <b id="rTroughVal">0.40</b></label>
+    <input type="range" id="rTrough" min="0.25" max="0.7" step="0.05" value="0.40">
+    <div class="hintt">23:00–06:00 low multiplier.</div>
+  </div>
+  <div class="ruleitem">
+    <label>Fri/Sat day factor <b id="rWeekendVal">1.30</b></label>
+    <input type="range" id="rWeekend" min="1.0" max="1.6" step="0.05" value="1.30">
+    <div class="hintt">Weekend uplift on daily demand.</div>
+  </div>
+  <div class="ruleitem">
+    <label>Target on-shift (peak) <b id="rTargetVal">15,000</b></label>
+    <input type="range" id="rTarget" min="10000" max="18000" step="500" value="15000">
+    <div class="hintt">Ranges ~6,000 deep-night → this at Fri/Sat peak.</div>
+  </div>
+
+  <button class="btn primary" id="rulesApply" style="margin-top:10px;justify-content:center">Apply &amp; re-run</button>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   MPSCC · Resource & Shift Planner — live mockup (vanilla JS)
+   Demand model, firearms cover, station balance, roster, fleet
+   ============================================================ */
+const $=id=>document.getElementById(id);
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const ri=(a,b)=>Math.floor(rnd(a,b+1));
+const pick=a=>a[ri(0,a.length-1)];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+/* rule state */
+const rules={faMin:1500,rest:11,peak:1.40,trough:0.40,weekend:1.30,target:15000};
+
+/* clock */
+function tickClock(){$("clock").textContent="🇬🇧 London "+new Date().toLocaleTimeString("en-GB",{timeZone:"Europe/London",hour12:false});}
+setInterval(tickClock,1000); tickClock();
+
+/* toast */
+let toastT;
+function toast(msg){const t=$("toast");t.innerHTML=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2800);}
+
+/* ============================================================
+   DEMAND MODEL  (doc 06)
+   ============================================================ */
+const dayFactor={Mon:0.85,Tue:0.85,Wed:0.95,Thu:1.0,Fri:1.25,Sat:1.30,Sun:1.05};
+function hourFactor(h){
+  // trough 23:00-06:00 low, peak 18:00-23:00 high, smooth-ish
+  if(h>=23||h<6) return rules.trough + (h===23?0.15:0)+rnd(-0.03,0.03);
+  if(h>=18&&h<23) return rules.peak - (23-h)*0.02 + rnd(-0.03,0.03);
+  if(h>=6&&h<10) return 0.6+ (h-6)*0.08;      // morning build
+  if(h>=10&&h<18) return 0.9+ Math.sin((h-10)/8*Math.PI)*0.3; // daytime hump
+  return 0.7;
+}
+function demand(dayIdx,h){
+  const base=0.75;
+  let df=dayFactor[DAYS[dayIdx]];
+  if((DAYS[dayIdx]==="Fri"||DAYS[dayIdx]==="Sat")) df=rules.weekend;
+  return base*df*hourFactor(h);
+}
+
+/* staffed = target curve + roster noise/gaps */
+let coverGreen=0;
+function drawHeatmap(){
+  const hm=$("heatmap"); hm.innerHTML="";
+  // top-left corner
+  hm.appendChild(elc("div","hm-h",""));
+  for(let h=0;h<24;h++){ hm.appendChild(elc("div","hm-h", (h%3===0)? String(h).padStart(2,"0"):"")); }
+  let green=0,total=0,delay=0;
+  DAYS.forEach((d,di)=>{
+    hm.appendChild(elc("div","hm-d",d));
+    for(let h=0;h<24;h++){
+      const dem=demand(di,h);
+      // staffed ratio: how well roster met demand (random shortfalls at peaks)
+      const staffed = clamp(1.05 - Math.max(0,(dem-0.8))*rnd(0.05,0.5) - (Math.random()<0.06?rnd(.15,.4):0), 0.45, 1.15);
+      total++;
+      let bg,label;
+      if(staffed>=1.0){bg="#16a34a";label="met";green++;}
+      else if(staffed>=0.9){bg="#65a30d";label="met";green++;}
+      else if(staffed>=0.8){bg="#eab308";label="tight";}
+      else if(staffed>=0.68){bg="#f59e0b";label="short";}
+      else {bg="#dc2626";label="UNDER";}
+      const c=elc("div","hm-c","");
+      c.style.background="var(--panel-2)";
+      c.dataset.tip=d+" "+String(h).padStart(2,"0")+":00 · "+label+" · demand "+dem.toFixed(2);
+      hm.appendChild(c);
+      // animate in
+      const target=bg;
+      setTimeout(()=>{c.style.background=target;},delay); delay+=4;
+    }
+  });
+  coverGreen=Math.round(green/total*100);
+}
+function elc(tag,cls,txt){const e=document.createElement(tag);e.className=cls;if(txt!==undefined)e.textContent=txt;return e;}
+
+/* ============================================================
+   FIREARMS COVER LINE CHART
+   ============================================================ */
+function drawFirearms(){
+  const W=480,H=210,padL=42,padB=24,padT=12,padR=10;
+  const gx=x=>padL+(x/23)*(W-padL-padR);
+  const maxY=Math.max(3000,rules.faMin*1.6);
+  const gy=v=>H-padB-(v/maxY)*(H-padB-padT);
+  // firearms on-shift curve: follows demand, always ≥ ~ min, peaks evening
+  const pts=[];
+  for(let h=0;h<24;h++){
+    const df=1.15;
+    const cover = rules.faMin*(0.9+hourFactor(h)*1.0)*rnd(0.97,1.06);
+    pts.push({h,v:clamp(cover,rules.faMin*0.7,6000)});
+  }
+  let line="",area="";
+  pts.forEach((p,i)=>{ const x=gx(p.h),y=gy(p.v); line+=(i?"L":"M")+x.toFixed(1)+","+y.toFixed(1)+" "; });
+  area=line+"L"+gx(23)+","+(H-padB)+" L"+padL+","+(H-padB)+" Z";
+  // y gridlines
+  let grid="";
+  for(let v=0;v<=maxY;v+=1000){ const y=gy(v); grid+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="rgba(255,255,255,.06)"/>'
+    +'<text class="axlbl" x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end">'+(v/1000).toFixed(0)+'k</text>'; }
+  let xlab="";
+  for(let h=0;h<24;h+=4){ xlab+='<text class="axlbl" x="'+gx(h)+'" y="'+(H-8)+'" text-anchor="middle">'+String(h).padStart(2,"0")+'</text>'; }
+  const minY=gy(rules.faMin);
+  // dots
+  let dots=""; pts.forEach(p=>{dots+='<circle cx="'+gx(p.h).toFixed(1)+'" cy="'+gy(p.v).toFixed(1)+'" r="2.4" fill="var(--accent-2)"/>';});
+  $("faChart").innerHTML=
+    '<defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0%" stop-color="rgba(34,211,238,.35)"/><stop offset="100%" stop-color="rgba(34,211,238,0)"/></linearGradient></defs>'
+    +grid+xlab
+    +'<path d="'+area+'" fill="url(#fg)"/>'
+    +'<path d="'+line+'" fill="none" stroke="var(--accent-2)" stroke-width="2.2" style="stroke-dasharray:1400;stroke-dashoffset:1400"><animate attributeName="stroke-dashoffset" from="1400" to="0" dur="1s" fill="freeze"/></path>'
+    +dots
+    +'<line x1="'+padL+'" y1="'+minY+'" x2="'+(W-padR)+'" y2="'+minY+'" stroke="var(--p1)" stroke-width="1.6" stroke-dasharray="6 4"/>'
+    +'<text class="axlbl" x="'+(W-padR)+'" y="'+(minY-4)+'" text-anchor="end" fill="var(--p1)">min '+rules.faMin+'</text>';
+  // min cover metric = lowest point
+  const low=Math.min(...pts.map(p=>p.v));
+  return Math.round(low);
+}
+
+/* ============================================================
+   STATION BALANCE
+   ============================================================ */
+const STATIONS=[
+  {name:"Bow MetCC",cap:520,band:"LARGE"},
+  {name:"Lambeth HQ",cap:610,band:"LARGE"},
+  {name:"Hendon Centre",cap:480,band:"LARGE"},
+  {name:"Westminster",cap:440,band:"LARGE"},
+  {name:"Brixton",cap:300,band:"MEDIUM"},
+  {name:"Camden Town",cap:280,band:"MEDIUM"},
+  {name:"Hackney",cap:260,band:"MEDIUM"},
+  {name:"Croydon",cap:320,band:"MEDIUM"},
+  {name:"Ealing",cap:210,band:"SMALL"},
+  {name:"Bromley",cap:180,band:"SMALL"}
+];
+let underStations=0;
+function drawStations(){
+  const box=$("stations"); box.innerHTML=""; underStations=0;
+  STATIONS.forEach((s,i)=>{
+    const ratio=clamp(rnd(0.72,1.12),0.6,1.15);
+    const staffed=Math.round(s.cap*ratio);
+    const pct=Math.round(ratio*100);
+    let col,flag;
+    if(ratio<0.85){col="var(--p1)";flag="↓ under";underStations++;}
+    else if(ratio>1.05){col="var(--st-onscene)";flag="↑ over";}
+    else {col="var(--st-available)";flag="✓ balanced";}
+    const row=elc("div","sbar");
+    row.innerHTML='<span class="nm">'+s.name+' <span class="faint" style="font-size:.66rem">'+s.band+'</span></span>'
+      +'<div class="track"><div class="cap" style="left:100%"></div><div class="fillb" style="width:0%;background:'+col+'"></div></div>'
+      +'<span class="flag" style="color:'+col+'">'+flag+'</span>';
+    box.appendChild(row);
+    const fb=row.querySelector(".fillb");
+    setTimeout(()=>{ fb.style.width=clamp(pct,0,100)+"%"; },80+i*50);
+    row.querySelector(".track").title=staffed+" / "+s.cap+" ("+pct+"%)";
+  });
+}
+
+/* ============================================================
+   ROSTER GRID  (officers × 7 days)
+   ============================================================ */
+const SHIFTS=["EARLY","DAY","LATE","NIGHT","OFF"];
+const OFFICERS=[
+  ["PC 2456 AB","Response · FIREARMS"],["PS 0912 KD","Supervisor"],
+  ["PC 3341 QT","Neighbourhood"],["DC 8820 LM","Detective"],
+  ["PC 1177 RS","Traffic · ADV.DRIVER"],["PC 6654 XZ","Dog handler"],
+  ["INSP 0203 VC","Duty Insp."],["PC 4490 HN","Response · FIREARMS"],
+  ["PC 7712 PW","Public order"],["DS 3308 EG","Detective Sgt."],
+  ["PC 5521 UO","Mounted"],["PC 9987 BL","Response"]
+];
+let roster=[];
+function genRoster(){
+  roster=OFFICERS.map(()=>DAYS.map(()=>{
+    // fair-ish spread with ~2 rest days
+    return Math.random()<0.28?"OFF":pick(["EARLY","DAY","LATE","NIGHT"]);
+  }));
+}
+function drawRoster(animate){
+  const g=$("rgrid"); g.innerHTML="";
+  g.appendChild(elc("div","rg-h",""));
+  DAYS.forEach(d=>g.appendChild(elc("div","rg-h",d)));
+  OFFICERS.forEach((o,oi)=>{
+    const oc=elc("div","rg-o"); oc.innerHTML='<span>'+o[0].split(" ").slice(0,2).join(" ")+'</span><span class="col">'+o[1]+'</span>';
+    g.appendChild(oc);
+    DAYS.forEach((d,di)=>{
+      const sh=roster[oi][di];
+      const c=elc("div","cell "+sh, sh==="OFF"?"—":sh[0]+(sh==="NIGHT"?"N":sh==="LATE"?"L":sh==="EARLY"?"E":"D"));
+      c.textContent = sh==="OFF"?"OFF":sh;
+      if(animate)c.classList.add("cellpop"), c.style.animationDelay=((oi*7+di)*6)+"ms";
+      c.addEventListener("click",()=>{
+        const idx=(SHIFTS.indexOf(roster[oi][di])+1)%SHIFTS.length;
+        roster[oi][di]=SHIFTS[idx];
+        c.className="cell "+SHIFTS[idx]; c.textContent=SHIFTS[idx]==="OFF"?"OFF":SHIFTS[idx];
+        c.classList.add("cellpop"); setTimeout(()=>c.classList.remove("cellpop"),400);
+        recomputeStats();
+      });
+      g.appendChild(c);
+    });
+  });
+}
+
+/* ============================================================
+   FLEET UTILISATION  (doc 06 totals)
+   ============================================================ */
+const FLEET=[
+  {t:"CAR",ic:"🚗",total:8000,base:82},
+  {t:"VAN",ic:"🚐",total:1000,base:61},
+  {t:"BIKE",ic:"🏍",total:1100,base:40},
+  {t:"DOG",ic:"🐕",total:60,base:55},
+  {t:"HORSE",ic:"🐎",total:30,base:30}
+];
+let fleetInUse=0;
+function drawFleet(){
+  const box=$("fleet"); box.innerHTML=""; fleetInUse=0;
+  FLEET.forEach(f=>{
+    const pct=clamp(Math.round(f.base+rnd(-6,6)),15,96);
+    const inUse=Math.round(f.total*pct/100); fleetInUse+=inUse;
+    const R=38,C=2*Math.PI*R, off=C*(1-pct/100);
+    const col = pct>75?"var(--p2)":pct>50?"var(--accent-2)":"var(--st-available)";
+    const card=elc("div","fcard");
+    card.innerHTML='<div class="ic">'+f.ic+'</div>'
+      +'<svg class="donut" viewBox="0 0 100 100">'
+      +'<circle cx="50" cy="50" r="'+R+'" fill="none" stroke="var(--panel-2)" stroke-width="10"/>'
+      +'<circle cx="50" cy="50" r="'+R+'" fill="none" stroke="'+col+'" stroke-width="10" stroke-linecap="round"'
+      +' transform="rotate(-90 50 50)" stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+C.toFixed(1)+'">'
+      +'<animate attributeName="stroke-dashoffset" from="'+C.toFixed(1)+'" to="'+off.toFixed(1)+'" dur=".9s" fill="freeze" calcMode="spline" keySplines="0.2 0.9 0.3 1" keyTimes="0;1"/></circle>'
+      +'<text x="50" y="55" text-anchor="middle" font-size="20" font-weight="750" fill="var(--text)">'+pct+'</text></svg>'
+      +'<div class="pct">'+f.t+' '+pct+'%</div>'
+      +'<div class="sub">'+inUse.toLocaleString()+' / '+f.total.toLocaleString()+'</div>';
+    box.appendChild(card);
+  });
+}
+
+/* ============================================================
+   STATS
+   ============================================================ */
+function recomputeStats(){
+  // on-shift from roster grid extrapolated to 40k
+  const cells=roster.flat();
+  const onFrac=cells.filter(c=>c!=="OFF").length/cells.length;
+  const onShift=Math.round(40000*onFrac* (0.4+rnd(0,0.05)) ); // scaled sample→force
+  $("stOnShift").textContent=onShift.toLocaleString();
+}
+function setStats(faLow){
+  recomputeStats();
+  $("stFirearms").textContent=faLow.toLocaleString();
+  $("stFirearmsD").textContent=(faLow>=rules.faMin?"✓ ≥ min "+rules.faMin:"⚠ below min "+rules.faMin);
+  $("stFirearmsD").className="delta "+(faLow>=rules.faMin?"up":"down");
+  $("stUnder").textContent=underStations;
+  $("stUnderD").textContent="of 110 stations";
+  $("stUnderD").className="delta "+(underStations>3?"warn":"up");
+  $("stCover").textContent=coverGreen+"%";
+  $("stFleet").textContent=fleetInUse.toLocaleString();
+}
+
+/* ============================================================
+   GENERATE (recompute + animate everything)
+   ============================================================ */
+let generating=false;
+function generate(){
+  if(generating)return; generating=true;
+  const btn=$("genBtn"); const orig=btn.innerHTML;
+  btn.innerHTML='<span class="spin">⚙</span> Running rules engine…'; btn.disabled=true;
+  $("minLbl").textContent=rules.faMin; $("rFaVal") && ($("rFaVal").textContent=rules.faMin);
+  setTimeout(()=>{
+    drawHeatmap();
+    const faLow=drawFirearms();
+    drawStations();
+    genRoster(); drawRoster(true);
+    drawFleet();
+    setStats(faLow);
+    btn.innerHTML=orig; btn.disabled=false; generating=false;
+    toast("✅ Roster generated · "+coverGreen+"% demand met · "+underStations+" stations under-staffed · firearms low "+faLow);
+  },700);
+}
+
+/* ============================================================
+   RULES PANEL
+   ============================================================ */
+function bindRange(id,valId,fmt,onChange){
+  const r=$(id),v=$(valId);
+  const upd=()=>{ v.textContent=fmt(r.value); };
+  r.addEventListener("input",()=>{upd();onChange&&onChange(+r.value);});
+  upd();
+}
+bindRange("rFa","rFaVal",x=>x,v=>rules.faMin=v);
+bindRange("rRest","rRestVal",x=>x+"h",v=>rules.rest=v);
+bindRange("rPeak","rPeakVal",x=>Number(x).toFixed(2),v=>rules.peak=v);
+bindRange("rTrough","rTroughVal",x=>Number(x).toFixed(2),v=>rules.trough=v);
+bindRange("rWeekend","rWeekendVal",x=>Number(x).toFixed(2),v=>rules.weekend=v);
+bindRange("rTarget","rTargetVal",x=>Number(x).toLocaleString(),v=>rules.target=v);
+
+function openRules(){$("rules").classList.add("open");$("overlay").classList.add("on");}
+function closeRules(){$("rules").classList.remove("open");$("overlay").classList.remove("on");}
+$("rulesBtn").addEventListener("click",openRules);
+$("rulesClose").addEventListener("click",closeRules);
+$("overlay").addEventListener("click",closeRules);
+$("rulesApply").addEventListener("click",()=>{ closeRules(); toast("⚙ Rules updated — re-running…"); generate(); });
+$("genBtn").addEventListener("click",generate);
+
+/* ---------- init ---------- */
+genRoster();
+drawHeatmap();
+const faLow0=drawFirearms();
+drawStations();
+drawRoster(false);
+drawFleet();
+setStats(faLow0);
+setTimeout(()=>toast("👋 Tune <b>Rules ⚙</b> then <b>Generate roster</b> to re-run the engine"),900);
+</script>
+</body>
+</html>

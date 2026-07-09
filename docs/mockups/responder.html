@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPSCC · 999 First Responder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap">
+<link rel="stylesheet" href="assets/mpscc.css">
+<style>
+/* ---- page-specific layout only; everything else reuses mpscc.css ---- */
+html,body{height:100%;overflow:hidden}
+.app{display:flex;flex-direction:column;height:100vh}
+.topbar .qmini{margin-left:auto;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:.8rem;color:var(--text-dim)}
+.topbar .qmini .bars{display:inline-flex;gap:2px}
+.topbar .qmini .bars i{width:5px;height:16px;border-radius:2px;background:var(--panel-2);display:inline-block;transition:background .3s}
+.topbar .clock{margin-left:0}
+
+.workspace{flex:1;display:grid;grid-template-columns:300px 1fr 360px;gap:12px;padding:12px;min-height:0}
+.workspace>section{min-height:0;display:flex;flex-direction:column}
+.panel.fill{flex:1;min-height:0;display:flex;flex-direction:column;padding:16px}
+.pcap{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.pcap .cnt{font-family:var(--mono);font-size:.72rem;color:var(--text-faint)}
+
+/* ---- intake gauge ---- */
+.qbig{display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 0 12px}
+.qbig .num{font-size:3.2rem;font-weight:800;letter-spacing:-.03em;line-height:1;
+  background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-variant-numeric:tabular-nums}
+.qbig .lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.14em;color:var(--text-faint)}
+.qgauge{height:16px}
+.qtrend{font-family:var(--mono);font-size:.72rem;color:var(--text-dim);display:flex;justify-content:space-between;width:100%}
+.spark{width:100%;height:44px;display:block}
+.answerbtn{width:100%;justify-content:center;font-size:1.05rem;padding:15px}
+.answerbtn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+.recent{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:7px;padding-right:4px}
+.rc{display:flex;align-items:center;gap:9px;border:1px solid var(--hair);border-radius:10px;padding:8px 10px;background:var(--panel);font-size:.8rem}
+.rc.newrow{animation:slidein .5s cubic-bezier(.2,.9,.3,1)}
+@keyframes slidein{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:none}}
+.rc .ref{font-family:var(--mono);font-size:.74rem;color:var(--text-dim)}
+.rc .ct{margin-left:auto;color:var(--text-faint);font-size:.72rem}
+
+/* ---- active call ---- */
+.callcard{border:1px solid var(--hair-strong);border-radius:14px;padding:16px;
+  background:linear-gradient(135deg,rgba(34,211,238,.07),rgba(47,107,255,.04));position:relative;overflow:hidden}
+.callcard.ringing{border-color:var(--accent-2);box-shadow:0 0 0 1px rgba(34,211,238,.4),0 12px 40px -12px rgba(34,211,238,.4)}
+.phoneline{display:flex;align-items:center;gap:12px}
+.phoneline .ph{font-family:var(--mono);font-size:1.5rem;font-weight:700;letter-spacing:.01em}
+.phoneline .callic{font-size:1.6rem}
+.fixtag{margin-left:auto}
+.fixgrid{display:grid;grid-template-columns:1fr 220px;gap:14px;margin-top:14px}
+@media(max-width:1100px){.fixgrid{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+.field label{font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-faint)}
+.field input{font-family:inherit;font-size:.9rem;color:var(--text);background:var(--panel-2);
+  border:1px solid var(--hair);border-radius:10px;padding:10px 12px;transition:border-color .18s,box-shadow .18s}
+.field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,107,255,.2)}
+.field input.filled{border-color:var(--st-onroute)}
+.field.pc input{font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.minimap{border:1px solid var(--hair);border-radius:12px;overflow:hidden;
+  background:radial-gradient(400px 300px at 50% 40%,rgba(47,107,255,.1),transparent 70%),linear-gradient(180deg,#070c18,#0a1120);
+  aspect-ratio:1/1;position:relative}
+.minimap svg{width:100%;height:100%;display:block}
+.fixmeta{font-family:var(--mono);font-size:.74rem;color:var(--text-dim);margin-top:7px;text-align:center}
+.callempty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  flex:1;color:var(--text-faint);text-align:center;padding:40px 20px}
+.callempty .big{font-size:3rem;opacity:.5}
+.hint{font-size:.78rem;color:var(--text-dim);display:flex;gap:14px;flex-wrap:wrap;margin-top:auto;padding-top:12px}
+.hint span{display:inline-flex;align-items:center;gap:6px}
+
+/* ---- live assessment ---- */
+.stream{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px;padding-right:4px}
+.arow{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--hair);opacity:.32;transition:opacity .35s}
+.arow.on{opacity:1}
+.arow .k{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);width:118px;flex:none}
+.arow .v{font-weight:600;font-size:.9rem;flex:1}
+.arow .v.streaming::after{content:'▋';color:var(--accent-2);animation:blink 1s steps(2) infinite;font-weight:400}
+.crimesel{font-family:inherit;font-size:.9rem;font-weight:600;color:var(--text);background:var(--panel-2);
+  border:1px solid var(--hair);border-radius:9px;padding:7px 10px;width:100%}
+.crimesel:focus{outline:none;border-color:var(--accent)}
+.toggle{display:inline-flex;gap:4px}
+.toggle button{cursor:pointer;font-family:inherit;font-size:.76rem;font-weight:600;border:1px solid var(--hair);
+  background:var(--panel);color:var(--text-dim);padding:5px 12px;border-radius:8px;transition:all .15s}
+.toggle button.yes.on{background:linear-gradient(135deg,#ef4444,#dc2626);border-color:transparent;color:#fff}
+.toggle button.no.on{background:var(--panel-2);border-color:var(--hair-strong);color:var(--text)}
+.stepper{display:inline-flex;align-items:center;gap:0;border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+.stepper button{cursor:pointer;border:0;background:var(--panel-2);color:var(--text);font-family:inherit;font-size:1rem;padding:4px 12px}
+.stepper button:hover{background:var(--panel)}
+.stepper .val{padding:4px 14px;font-family:var(--mono);font-weight:700;min-width:40px;text-align:center}
+.sugg{display:flex;align-items:center;gap:10px;margin:14px 0 8px;font-size:.82rem;color:var(--text-dim)}
+.priopick{display:flex;gap:7px;margin-bottom:14px}
+.priopick button{flex:1;cursor:pointer;font-family:inherit;font-weight:700;font-size:.95rem;color:#fff;
+  border:2px solid transparent;border-radius:10px;padding:11px 0;transition:transform .12s,box-shadow .2s,outline .15s;opacity:.55}
+.priopick button:hover{transform:translateY(-2px);opacity:.85}
+.priopick button.sel{opacity:1;outline:2px solid #fff;outline-offset:1px;box-shadow:0 8px 24px -8px rgba(0,0,0,.7)}
+.priopick .pb1{background:linear-gradient(135deg,#ef4444,#dc2626)}
+.priopick .pb2{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.priopick .pb3{background:linear-gradient(135deg,#eab308,#ca8a04);color:#1a1a1a}
+.priopick .pb4{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.priopick .pb5{background:linear-gradient(135deg,#6b7280,#4b5563)}
+.createbtn{width:100%;justify-content:center;font-size:1rem;padding:14px}
+.createbtn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.assess-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text-faint);text-align:center;padding:40px 20px}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(10,16,28,.96);border:1px solid var(--hair-strong);border-radius:12px;
+  padding:12px 20px;font-size:.88rem;box-shadow:var(--shadow);opacity:0;pointer-events:none;
+  transition:all .3s;z-index:200;display:flex;align-items:center;gap:10px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:var(--st-available);box-shadow:0 0 0 1px rgba(34,197,94,.4),var(--shadow)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== TOP BAR ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="badge">🛡</span>
+      <span>MPSCC<small>999 First Responder · MetCC Intake</small></span>
+    </div>
+    <span class="pill">🟢 SIM LIVE</span>
+    <span class="pill">Bow MetCC · Op. K. Osei</span>
+    <div class="qmini">
+      <span>999 queue</span>
+      <span class="bars" id="qBars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <b class="tnum" id="qMiniNum" style="color:var(--text)">0</b>
+    </div>
+    <span class="clock tnum" id="clock">--:--:--</span>
+    <a href="index.html">← Design Portal</a>
+  </header>
+
+  <!-- ===================== WORKSPACE ===================== -->
+  <div class="workspace">
+
+    <!-- LEFT: intake queue -->
+    <section>
+      <div class="panel fill">
+        <div class="pcap">
+          <div class="panel-title" style="margin:0">Intake Queue</div>
+          <span class="cnt">calls.inbound</span>
+        </div>
+
+        <div class="qbig">
+          <div class="num tnum" id="qNum">0</div>
+          <div class="lbl">calls waiting</div>
+        </div>
+        <div class="qgauge gauge"><i id="qFill" style="width:0%"></i></div>
+        <div class="qtrend">
+          <span id="qRate">↗ 0/min</span>
+          <span id="qLong">longest wait 0s</span>
+        </div>
+        <svg class="spark" id="spark" viewBox="0 0 300 44" preserveAspectRatio="none"></svg>
+
+        <button class="btn primary big answerbtn" id="answerBtn">📞 ANSWER NEXT</button>
+
+        <div class="panel-title" style="margin:16px 0 8px">Recent calls</div>
+        <div class="recent scroll" id="recent"></div>
+      </div>
+    </section>
+
+    <!-- CENTER: active call -->
+    <section>
+      <div class="panel fill">
+        <div class="pcap">
+          <div class="panel-title" style="margin:0">Active Call</div>
+          <span class="cnt" id="callTimer">—</span>
+        </div>
+
+        <div id="callBody" style="flex:1;min-height:0;display:flex;flex-direction:column">
+          <div class="callempty" id="callEmpty">
+            <div class="big">📞</div>
+            <div>No active call.<br>Press <b>ANSWER NEXT</b> to pull the next 999 caller from the queue.</div>
+          </div>
+        </div>
+
+        <div class="hint">
+          <span><kbd>Enter</kbd> answer next</span>
+          <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> create incident</span>
+          <span><kbd>1</kbd>–<kbd>5</kbd> set priority</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: live assessment -->
+    <section>
+      <div class="panel fill">
+        <div class="pcap">
+          <div class="panel-title" style="margin:0">Live Assessment</div>
+          <span class="cnt blink" id="streamStatus" style="display:none">● streaming</span>
+        </div>
+
+        <div id="assessEmpty" class="assess-empty">
+          <div style="font-size:2.4rem;opacity:.5">🎧</div>
+          <div>Assessment streams here from the<br>crime detail feed as the caller talks.</div>
+        </div>
+
+        <div id="assessBody" style="flex:1;min-height:0;display:none;flex-direction:column">
+          <div class="stream" id="stream">
+            <div class="arow" data-row="crime">
+              <span class="k">Crime type</span>
+              <span class="v" style="flex:1"><select class="crimesel" id="crimeSel"></select></span>
+            </div>
+            <div class="arow" data-row="injuries">
+              <span class="k">Injuries?</span>
+              <span class="v" id="injV">—</span>
+              <div class="toggle" id="injToggle"><button class="no" data-v="0">No</button><button class="yes" data-v="1">Yes</button></div>
+            </div>
+            <div class="arow" data-row="weapons">
+              <span class="k">Weapons?</span>
+              <span class="v" id="wpnV">—</span>
+              <div class="toggle" id="wpnToggle"><button class="no" data-v="0">No</button><button class="yes" data-v="1">Yes</button></div>
+            </div>
+            <div class="arow" data-row="suspects">
+              <span class="k">Suspects on scene?</span>
+              <span class="v" id="susV">—</span>
+              <div class="toggle" id="susToggle"><button class="no" data-v="0">No</button><button class="yes" data-v="1">Yes</button></div>
+            </div>
+            <div class="arow" data-row="risk">
+              <span class="k">People at risk</span>
+              <span class="v" style="flex:1"></span>
+              <div class="stepper" id="riskStep"><button data-d="-1">−</button><span class="val tnum" id="riskVal">0</span><button data-d="1">+</button></div>
+            </div>
+            <div class="arow" data-row="desc" style="border-bottom:0">
+              <span class="k">Caller narrative</span>
+              <span class="v" id="descV" style="flex:1;font-weight:400;color:var(--text-dim);font-size:.82rem">—</span>
+            </div>
+          </div>
+
+          <div class="sugg" id="suggRow" style="display:none">
+            <span>Suggested priority:</span>
+            <span class="prio" id="suggChip">P—</span>
+            <span class="faint" id="suggWhy"></span>
+          </div>
+          <div class="priopick" id="priopick" style="display:none">
+            <button class="pb1" data-p="1">1</button>
+            <button class="pb2" data-p="2">2</button>
+            <button class="pb3" data-p="3">3</button>
+            <button class="pb4" data-p="4">4</button>
+            <button class="pb5" data-p="5">5</button>
+          </div>
+          <button class="btn primary createbtn" id="createBtn" disabled>✔ CREATE INCIDENT</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   MPSCC · 999 First Responder console — live mockup (vanilla JS)
+   ============================================================ */
+
+/* ---------- 40 crime types (doc 03) with default priority + weight ---------- */
+/* weight: petty crime common, murder/terror rare */
+const CRIMES = [
+  {code:"MURDER",n:"Murder",p:1,w:0.4},
+  {code:"ATTEMPTED_MURDER",n:"Attempted murder",p:1,w:0.5},
+  {code:"MANSLAUGHTER",n:"Manslaughter",p:1,w:0.3},
+  {code:"GBH",n:"Grievous bodily harm",p:1,w:2},
+  {code:"ABH",n:"Actual bodily harm",p:2,w:5},
+  {code:"COMMON_ASSAULT",n:"Common assault",p:3,w:12},
+  {code:"RAPE",n:"Rape",p:1,w:0.7},
+  {code:"SEXUAL_ASSAULT",n:"Sexual assault",p:1,w:1.5},
+  {code:"KIDNAP",n:"Kidnapping / false imprisonment",p:1,w:0.4},
+  {code:"ARMED_ROBBERY",n:"Robbery (armed)",p:1,w:1},
+  {code:"ROBBERY",n:"Robbery (personal)",p:2,w:6},
+  {code:"AGG_BURGLARY",n:"Aggravated burglary",p:1,w:1.2},
+  {code:"BURGLARY_DWELLING",n:"Burglary — residential",p:2,w:9},
+  {code:"BURGLARY_COMMERCIAL",n:"Burglary — commercial",p:3,w:6},
+  {code:"FIREARMS_INCIDENT",n:"Firearms discharge / person with gun",p:1,w:0.8},
+  {code:"KNIFE_CRIME",n:"Knife crime / person with blade",p:1,w:3},
+  {code:"TERRORISM_SUSPECT",n:"Suspected terrorism",p:1,w:0.2},
+  {code:"ARSON",n:"Arson",p:1,w:1.5},
+  {code:"HOSTAGE",n:"Hostage situation",p:1,w:0.2},
+  {code:"DOMESTIC_ABUSE",n:"Domestic abuse (in progress)",p:1,w:7},
+  {code:"CHILD_ABUSE",n:"Child abuse / safeguarding",p:1,w:2},
+  {code:"MISSING_PERSON_HR",n:"Missing person — high risk",p:1,w:2},
+  {code:"MISSING_PERSON",n:"Missing person — standard",p:3,w:5},
+  {code:"RTC_INJURY",n:"Road traffic collision — injury",p:1,w:5},
+  {code:"RTC_DAMAGE",n:"Road traffic collision — damage only",p:3,w:7},
+  {code:"DANGEROUS_DRIVING",n:"Dangerous / careless driving",p:2,w:6},
+  {code:"DRINK_DRIVING",n:"Driving under influence",p:2,w:4},
+  {code:"DRUG_DEALING",n:"Drug dealing / supply",p:3,w:6},
+  {code:"DRUG_POSSESSION",n:"Drug possession",p:4,w:8},
+  {code:"ASSAULT_POLICE",n:"Assault on emergency worker",p:2,w:3},
+  {code:"PUBLIC_ORDER",n:"Public order / affray",p:2,w:7},
+  {code:"DRUNK_DISORDERLY",n:"Drunk and disorderly",p:4,w:11},
+  {code:"ASB",n:"Anti-social behaviour",p:4,w:14},
+  {code:"THEFT_PERSON",n:"Theft from the person / pickpocketing",p:3,w:10},
+  {code:"SHOPLIFTING",n:"Shoplifting",p:4,w:13},
+  {code:"VEHICLE_THEFT",n:"Theft of motor vehicle",p:3,w:8},
+  {code:"THEFT_FROM_VEHICLE",n:"Theft from motor vehicle",p:4,w:11},
+  {code:"CRIMINAL_DAMAGE",n:"Criminal damage / vandalism",p:4,w:12},
+  {code:"FRAUD",n:"Fraud",p:5,w:9},
+  {code:"HARASSMENT",n:"Harassment / malicious comms",p:4,w:8}
+];
+const CRIME_BY_CODE = Object.fromEntries(CRIMES.map(c=>[c.code,c]));
+
+/* crime narrative snippets keyed loosely by priority band */
+const NARRATIVES = {
+  1:["Caller states offender still present and there is immediate danger to life.",
+     "In progress — screaming heard, caller hiding, needs urgent attendance.",
+     "Serious injury reported at scene, ambulance also required."],
+  2:["Offence occurred within the last few minutes, suspect fled on foot.",
+     "Caller shaken but safe; wants officers to attend as soon as possible.",
+     "Suspect vehicle described, last seen heading away from scene."],
+  3:["Incident recent but scene now calm; caller can wait for attendance.",
+     "No ongoing threat; caller requesting a same-shift visit.",
+     "Property affected, caller has details of what was taken."],
+  4:["Non-urgent report; caller happy with a scheduled appointment.",
+     "Historic within the day, no suspect present, low risk.",
+     "Caller providing details for a follow-up visit."],
+  5:["Report for record / referral only; no deployment expected.",
+     "Caller seeking crime reference for insurance / bank."]
+};
+
+/* ---------- M25 postcode districts + sample addresses ---------- */
+const POSTCODES = [
+  {pc:"SW1A 1AA",borough:"Westminster",st:"Buckingham Gate"},
+  {pc:"EC1A 1BB",borough:"Islington",st:"St John Street"},
+  {pc:"E1 6AN",borough:"Tower Hamlets",st:"Commercial Road"},
+  {pc:"SE1 7PB",borough:"Southwark",st:"Belvedere Road"},
+  {pc:"N1 9GU",borough:"Islington",st:"Upper Street"},
+  {pc:"NW1 2DB",borough:"Camden",st:"Camden High Street"},
+  {pc:"SW9 8LB",borough:"Lambeth",st:"Coldharbour Lane"},
+  {pc:"E8 3RL",borough:"Hackney",st:"Mare Street"},
+  {pc:"W1D 3QU",borough:"Westminster",st:"Wardour Street"},
+  {pc:"SE15 5DQ",borough:"Southwark",st:"Rye Lane"},
+  {pc:"CR0 1LB",borough:"Croydon",st:"North End"},
+  {pc:"E14 5AB",borough:"Tower Hamlets",st:"Canary Wharf"},
+  {pc:"SW11 1RU",borough:"Wandsworth",st:"Lavender Hill"},
+  {pc:"W12 7RJ",borough:"Hammersmith",st:"Shepherd's Bush Green"},
+  {pc:"N7 8JL",borough:"Islington",st:"Holloway Road"}
+];
+const PLACES = ["Flat 4","Flat 12B","Unit 3","Ground floor","2nd floor","Basement","","","","",
+  "The Red Lion PH","Nisa Local","junction with","opposite","near bus stop A"];
+
+/* ---------- utils ---------- */
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const ri=(a,b)=>Math.floor(rnd(a,b+1));
+const pick=a=>a[ri(0,a.length-1)];
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function refDate(){const d=new Date();const p=n=>String(n).padStart(2,"0");return p(d.getDate())+p(d.getMonth()+1)+String(d.getFullYear()).slice(2);}
+let SEQ = 10000 + ri(30,90);
+function nextRef(){return refDate()+"-"+String(SEQ++).padStart(7,"0");}
+function weightedCrime(){
+  const tot=CRIMES.reduce((s,c)=>s+c.w,0); let r=Math.random()*tot;
+  for(const c of CRIMES){ r-=c.w; if(r<=0) return c; } return CRIMES[0];
+}
+function phone(){return "+44 7700 900"+String(ri(100,999));}
+function fmtSecs(s){s=Math.max(0,Math.floor(s));const m=Math.floor(s/60);const r=s%60;return m>0?(m+"m "+String(r).padStart(2,"0")+"s"):(r+"s");}
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg,cls){const t=$("toast");t.innerHTML=msg;t.className="toast show"+(cls?" "+cls:"");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2800);}
+
+/* ---------- clock (Europe/London) ---------- */
+function tickClock(){
+  const s=new Date().toLocaleTimeString("en-GB",{timeZone:"Europe/London",hour12:false});
+  $("clock").textContent="🇬🇧 London "+s;
+}
+setInterval(tickClock,1000); tickClock();
+
+/* ============================================================
+   INTAKE QUEUE — random-walk gauge that ebbs & flows
+   ============================================================ */
+let qLevel = ri(14,26);
+const Q_MAX = 45;
+let sparkHist = Array.from({length:60},()=>qLevel);
+let recentCalls = [];
+
+function seedRecent(){
+  for(let i=0;i<6;i++){ const c=weightedCrime(); recentCalls.push({ref:nextRef(),p:c.p,n:c.n}); }
+  renderRecent(false);
+}
+function renderRecent(anim){
+  const el=$("recent"); el.innerHTML="";
+  recentCalls.slice(-9).reverse().forEach((c,i)=>{
+    const d=document.createElement("div");
+    d.className="rc"+(anim&&i===0?" newrow":"");
+    d.innerHTML='<span class="prio prio-'+c.p+'">P'+c.p+'</span>'
+      +'<span class="ref">'+c.ref+'</span>'
+      +'<span class="ct">'+c.n+'</span>';
+    el.appendChild(d);
+  });
+}
+
+let lastMinuteArrivals=0, arrivalsWindow=[];
+function walkQueue(){
+  // ebb and flow: bias toward mean ~20, occasional surges
+  const surge = Math.random()<0.08 ? ri(3,7) : 0;
+  const drift = qLevel>28? -1 : (qLevel<12? 1 : 0);
+  const delta = ri(-3,3)+drift+surge;
+  const before=qLevel;
+  qLevel = clamp(qLevel+delta, 3, Q_MAX);
+  if(qLevel>before){ arrivalsWindow.push({t:Date.now(),n:qLevel-before}); }
+  sparkHist.push(qLevel); if(sparkHist.length>60) sparkHist.shift();
+  renderQueue();
+}
+function renderQueue(){
+  $("qNum").textContent=qLevel;
+  $("qMiniNum").textContent=qLevel;
+  const pct=Math.round(qLevel/Q_MAX*100);
+  $("qFill").style.width=pct+"%";
+  // colour the fill by pressure
+  const fill=$("qFill");
+  fill.style.background = qLevel>32 ? "linear-gradient(135deg,#ef4444,#f59e0b)"
+    : qLevel>22 ? "linear-gradient(135deg,#f59e0b,#eab308)"
+    : "var(--accent-grad)";
+  // topbar mini bars
+  const bars=$("qBars").children;
+  const lit=Math.round(qLevel/Q_MAX*bars.length);
+  for(let i=0;i<bars.length;i++){
+    bars[i].style.background = i<lit ? (qLevel>32?"var(--p1)":qLevel>22?"var(--p2)":"var(--accent)") : "var(--panel-2)";
+  }
+  // rate
+  const cutoff=Date.now()-60000; arrivalsWindow=arrivalsWindow.filter(a=>a.t>cutoff);
+  const rate=arrivalsWindow.reduce((s,a)=>s+a.n,0);
+  $("qRate").textContent=(rate>=0?"↗ ":"")+rate+"/min inbound";
+  $("qLong").textContent="longest wait "+fmtSecs(ri(40,180+qLevel*4));
+  drawSpark();
+}
+function drawSpark(){
+  const w=300,h=44,n=sparkHist.length;
+  const max=Q_MAX;
+  let d="";
+  sparkHist.forEach((v,i)=>{
+    const x=i/(n-1)*w, y=h-4-(v/max)*(h-8);
+    d+=(i?"L":"M")+x.toFixed(1)+","+y.toFixed(1)+" ";
+  });
+  const area=d+"L"+w+","+h+" L0,"+h+" Z";
+  $("spark").innerHTML=
+    '<defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0%" stop-color="rgba(47,107,255,.4)"/><stop offset="100%" stop-color="rgba(47,107,255,0)"/></linearGradient></defs>'
+    +'<path d="'+area+'" fill="url(#sg)"/>'
+    +'<path d="'+d+'" fill="none" stroke="var(--accent-2)" stroke-width="1.8"/>';
+}
+
+/* ============================================================
+   ACTIVE CALL + LIVE ASSESSMENT
+   ============================================================ */
+let call=null;         // current call state
+let callStartTs=0;
+let streamTimers=[];
+let selectedPrio=null;
+let suggestedPrio=null;
+
+function buildCrimeOptions(){
+  const sel=$("crimeSel"); sel.innerHTML="";
+  CRIMES.forEach(c=>{ const o=document.createElement("option"); o.value=c.code; o.textContent=c.n; sel.appendChild(o); });
+}
+buildCrimeOptions();
+
+function clearStreamTimers(){ streamTimers.forEach(t=>clearTimeout(t)); streamTimers=[]; }
+
+function answerNext(){
+  if(call){ toast("Finish the active call first — press CREATE INCIDENT"); return; }
+  if(qLevel<=0){ toast("Queue empty"); return; }
+  qLevel=Math.max(0,qLevel-1); renderQueue();
+
+  // pick location fix type
+  const isMobile = Math.random()<0.5;
+  const loc = pick(POSTCODES);
+  const crime = weightedCrime();
+  call = {
+    phone:phone(), isMobile, loc, crime,
+    lat:0,lng:0,acc:0,
+    injuries:null,weapons:null,suspects:null,risk:0,
+    ref:null
+  };
+  callStartTs=Date.now();
+  selectedPrio=null; suggestedPrio=null;
+
+  // London-ish coords for the borough (rough)
+  call.lat=(51.49+rnd(-0.06,0.08)).toFixed(4);
+  call.lng=(-0.12+rnd(-0.14,0.16)).toFixed(4);
+  call.acc=isMobile? ri(60,420) : 0;
+
+  renderCall();
+  renderAssessmentShell();
+  startStream();
+  toast('📞 Connected — <b>'+call.phone+'</b> · '+(isMobile?'MOBILE fix':'LANDLINE'));
+}
+
+function renderCall(){
+  $("callEmpty").style.display="none";
+  const body=$("callBody");
+  const l=call.loc;
+  const landlineAddr = (Math.random()<.7? (pick(PLACES)?pick(PLACES)+" ":"") :"")+ ri(1,220)+" "+l.st;
+  call._addr = call.isMobile ? "" : landlineAddr;
+  call._name = call.isMobile ? "" : pick(["","J. Adeyemi","P. Kowalski","S. Nguyen","D. O'Brien",""]);
+
+  const fixInner = call.isMobile
+    ? '<div class="minimap" id="minimap"></div>'
+      + '<div class="fixmeta" id="fixmeta">📍 '+call.lat+', '+call.lng+' &nbsp;±'+call.acc+'m</div>'
+      + '<div class="chip" style="margin-top:8px;justify-content:center">Mobile triangulation — confirm to an address</div>'
+    : '<div style="border:1px solid var(--hair);border-radius:12px;padding:16px;background:var(--panel);text-align:center">'
+      + '<div style="font-size:2rem">🏠</div>'
+      + '<div style="font-weight:650;margin-top:6px">Registered landline</div>'
+      + '<div class="fixmeta" style="margin-top:4px">'+landlineAddr+'<br>'+l.pc+', '+l.borough+'</div></div>';
+
+  body.innerHTML=
+    '<div class="callcard ringing" id="callcard">'
+    + '<div class="phoneline">'
+    +   '<span class="callic">📞</span>'
+    +   '<span class="ph">'+call.phone+'</span>'
+    +   '<span class="fixtag chip '+(call.isMobile?'':'accent')+'">'
+    +     (call.isMobile? '📡 BT fix: MOBILE' : '☎ BT fix: LANDLINE')+'</span>'
+    + '</div>'
+    + '<div class="fixgrid">'
+    +   '<div>'
+    +     '<div class="field"><label>Caller name</label><input id="fName" placeholder="capture from caller…" value="'+call._name+'"></div>'
+    +     '<div class="field"><label>Address</label><input id="fAddr" placeholder="'+(call.isMobile?'confirm address with caller…':'')+'" value="'+call._addr+'"></div>'
+    +     '<div class="field pc"><label>Postcode</label><input id="fPc" maxlength="8" value="'+(call.isMobile?'':l.pc)+'" placeholder="SW1A 1AA"></div>'
+    +   '</div>'
+    +   '<div>'+fixInner+'</div>'
+    + '</div>';
+
+  if(call.isMobile) drawMiniMap();
+  // mark fields filled state on input
+  ["fName","fAddr","fPc"].forEach(id=>{
+    const inp=$(id); if(!inp)return;
+    const upd=()=>inp.classList.toggle("filled",inp.value.trim().length>0);
+    upd(); inp.addEventListener("input",upd);
+  });
+  // stop ringing glow after a moment
+  setTimeout(()=>{ const c=$("callcard"); if(c)c.classList.remove("ringing"); },2600);
+}
+
+function drawMiniMap(){
+  const el=$("minimap"); if(!el)return;
+  // pin near centre, radius scaled by accuracy
+  const cx=110,cy=110;
+  const rad=clamp(28+call.acc/12,32,86);
+  let grid="";
+  for(let x=10;x<=210;x+=30) grid+='<line x1="'+x+'" y1="0" x2="'+x+'" y2="220" stroke="rgba(255,255,255,.05)"/>';
+  for(let y=10;y<=210;y+=30) grid+='<line x1="0" y1="'+y+'" x2="220" y2="'+y+'" stroke="rgba(255,255,255,.05)"/>';
+  grid+='<path d="M0,150 C60,130 140,175 220,150" fill="none" stroke="rgba(34,211,238,.16)" stroke-width="7"/>';
+  el.innerHTML='<svg viewBox="0 0 220 220" preserveAspectRatio="xMidYMid meet">'
+    +grid
+    +'<circle cx="'+cx+'" cy="'+cy+'" r="'+rad+'" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.55)" stroke-width="1.5" stroke-dasharray="5 4">'
+    +'<animate attributeName="r" values="'+(rad-4)+';'+(rad+4)+';'+(rad-4)+'" dur="2.6s" repeatCount="indefinite"/></circle>'
+    +'<circle cx="'+cx+'" cy="'+cy+'" r="5" fill="var(--accent-2)" stroke="#fff" stroke-width="1.5"/>'
+    +'<text x="'+cx+'" y="'+(cy-rad-6)+'" text-anchor="middle" font-size="13">📍</text>'
+    +'</svg>';
+}
+
+/* ---- assessment shell ---- */
+function renderAssessmentShell(){
+  $("assessEmpty").style.display="none";
+  $("assessBody").style.display="flex";
+  $("streamStatus").style.display="inline";
+  // reset rows
+  document.querySelectorAll(".arow").forEach(r=>r.classList.remove("on"));
+  $("injV").textContent="—"; $("wpnV").textContent="—"; $("susV").textContent="—";
+  $("riskVal").textContent="0"; $("descV").textContent="—";
+  document.querySelectorAll(".toggle button").forEach(b=>b.classList.remove("on"));
+  $("suggRow").style.display="none"; $("priopick").style.display="none";
+  document.querySelectorAll(".priopick button").forEach(b=>b.classList.remove("sel"));
+  $("createBtn").disabled=true;
+}
+
+/* ---- the streaming fill (feels like the caller talking) ---- */
+function startStream(){
+  clearStreamTimers();
+  const c=call.crime;
+  const rowOn=name=>document.querySelector('.arow[data-row="'+name+'"]').classList.add("on");
+
+  // 1. crime type
+  streamTimers.push(setTimeout(()=>{
+    rowOn("crime");
+    $("crimeSel").value=c.code;
+  },500));
+
+  // 2. injuries
+  streamTimers.push(setTimeout(()=>{
+    rowOn("injuries");
+    const v = (c.p<=1)? (Math.random()<.75?1:0) : (Math.random()<.3?1:0);
+    setToggle("inj",v); call.injuries=v;
+  },1400));
+
+  // 3. weapons
+  streamTimers.push(setTimeout(()=>{
+    rowOn("weapons");
+    const armedCrimes=["FIREARMS_INCIDENT","KNIFE_CRIME","ARMED_ROBBERY","AGG_BURGLARY","HOSTAGE"];
+    const v = armedCrimes.includes(c.code)?1:(Math.random()<.18?1:0);
+    setToggle("wpn",v); call.weapons=v;
+  },2300));
+
+  // 4. suspects on scene
+  streamTimers.push(setTimeout(()=>{
+    rowOn("suspects");
+    const v = (c.p<=2)? (Math.random()<.6?1:0) : (Math.random()<.25?1:0);
+    setToggle("sus",v); call.suspects=v;
+  },3200));
+
+  // 5. people at risk
+  streamTimers.push(setTimeout(()=>{
+    rowOn("risk");
+    const v = c.p<=1? ri(1,4) : c.p<=2? ri(0,2) : (Math.random()<.4?1:0);
+    call.risk=v; $("riskVal").textContent=v;
+  },4000));
+
+  // 6. narrative (typed)
+  streamTimers.push(setTimeout(()=>{
+    rowOn("desc");
+    typeText($("descV"), pick(NARRATIVES[c.p]||NARRATIVES[3]));
+  },4700));
+
+  // 7. suggested priority + selector
+  streamTimers.push(setTimeout(()=>{
+    computeSuggested();
+    $("suggRow").style.display="flex";
+    $("priopick").style.display="flex";
+    $("streamStatus").style.display="none";
+    $("createBtn").disabled=false;
+  },6200));
+}
+function setToggle(pfx,v){
+  const wrap=$(pfx+"Toggle");
+  wrap.querySelectorAll("button").forEach(b=>b.classList.toggle("on",+b.dataset.v===v));
+  $(pfx+"V").textContent = v? "YES" : "No";
+  $(pfx+"V").style.color = v? "var(--p1)" : "var(--text-dim)";
+}
+function typeText(el,txt){
+  el.classList.add("streaming"); el.textContent="";
+  let i=0;
+  const step=()=>{
+    el.textContent=txt.slice(0,i++);
+    if(i<=txt.length){ streamTimers.push(setTimeout(step,16)); }
+    else el.classList.remove("streaming");
+  };
+  step();
+}
+
+function computeSuggested(){
+  const code=$("crimeSel").value; const c=CRIME_BY_CODE[code];
+  let p=c.p;
+  // escalate on aggravating factors
+  if(call.weapons && p>1) p=Math.max(1,p-1);
+  if(call.injuries && p>1) p=Math.max(1,p-1);
+  if(call.risk>=2 && p>1) p=Math.max(1,p-1);
+  if(call.suspects && p>2) p=Math.max(2,p-1);
+  suggestedPrio=p;
+  $("suggChip").className="prio prio-"+p;
+  $("suggChip").textContent="P"+p;
+  const why=[]; if(call.weapons)why.push("weapons"); if(call.injuries)why.push("injuries");
+  if(call.risk>=2)why.push(call.risk+" at risk"); if(call.suspects)why.push("suspect present");
+  $("suggWhy").textContent = why.length? "↑ escalated for "+why.join(", ") : "from crime default";
+  if(selectedPrio===null) setPrio(p);
+}
+function setPrio(p){
+  selectedPrio=p;
+  document.querySelectorAll(".priopick button").forEach(b=>b.classList.toggle("sel",+b.dataset.p===p));
+}
+
+/* ---- create incident ---- */
+function createIncident(){
+  if(!call){ toast("No active call to create an incident from"); return; }
+  if($("createBtn").disabled) return;
+  const ref=nextRef();
+  const code=$("crimeSel").value; const c=CRIME_BY_CODE[code];
+  const p=selectedPrio||suggestedPrio||c.p;
+  recentCalls.push({ref,p,n:c.n});
+  renderRecent(true);
+  toast('✅ Incident created — <b>'+ref+'</b> · P'+p+' '+c.n+' → handed to Dispatch','success');
+  resetCall();
+}
+function resetCall(){
+  clearStreamTimers();
+  call=null; callStartTs=0; selectedPrio=null; suggestedPrio=null;
+  $("callTimer").textContent="—";
+  $("assessBody").style.display="none";
+  $("assessEmpty").style.display="flex";
+  $("streamStatus").style.display="none";
+  const body=$("callBody");
+  body.innerHTML='<div class="callempty" id="callEmpty">'
+    +'<div class="big">📞</div>'
+    +'<div>No active call.<br>Press <b>ANSWER NEXT</b> to pull the next 999 caller from the queue.</div></div>';
+}
+
+/* ---- call timer tick ---- */
+function tickCallTimer(){
+  if(call){ $("callTimer").textContent="⏱ "+fmtSecs((Date.now()-callStartTs)/1000)+" on call"; }
+}
+
+/* ============================================================
+   WIRE-UP
+   ============================================================ */
+$("answerBtn").addEventListener("click",answerNext);
+$("createBtn").addEventListener("click",createIncident);
+
+// toggles (manual override)
+["inj","wpn","sus"].forEach(pfx=>{
+  $(pfx+"Toggle").addEventListener("click",e=>{
+    const b=e.target.closest("button"); if(!b)return;
+    const v=+b.dataset.v; setToggle(pfx,v);
+    if(!call)return;
+    if(pfx==="inj")call.injuries=v; if(pfx==="wpn")call.weapons=v; if(pfx==="sus")call.suspects=v;
+    computeSuggested();
+  });
+});
+// risk stepper
+$("riskStep").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b||!call)return;
+  call.risk=clamp(call.risk+(+b.dataset.d),0,20);
+  $("riskVal").textContent=call.risk; computeSuggested();
+});
+// crime select change
+$("crimeSel").addEventListener("change",()=>{ if(call){ call.crime=CRIME_BY_CODE[$("crimeSel").value]; selectedPrio=null; computeSuggested(); }});
+// priority buttons
+$("priopick").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b)return; setPrio(+b.dataset.p);
+});
+
+// keyboard-first
+document.addEventListener("keydown",e=>{
+  const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
+  if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ e.preventDefault(); createIncident(); return; }
+  if(e.key==="Enter" && !typing){ e.preventDefault(); answerNext(); return; }
+  if(!typing && call && $("priopick").style.display!=="none" && /^[1-5]$/.test(e.key)){
+    e.preventDefault(); setPrio(+e.key);
+  }
+});
+
+/* ---------- master ticks ---------- */
+seedRecent();
+renderQueue();
+setInterval(walkQueue,2000);   // queue ebbs & flows
+setInterval(tickCallTimer,1000);
+
+setTimeout(()=>toast("👋 Press <b>ANSWER NEXT</b> (or <kbd>Enter</kbd>) to take the next 999 call"),900);
+</script>
+</body>
+</html>

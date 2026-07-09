@@ -1,0 +1,125 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Space-separated services to rebuild (blank = detect from HEAD~1 diff)'
+        required: false
+        default: ''
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+      full_restart: ${{ steps.detect.outputs.full_restart }}
+      skip: ${{ steps.detect.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Map changed paths to services
+        id: detect
+        run: |
+          if [ -n "${{ github.event.inputs.services }}" ]; then
+            echo "→ TARGETED (explicit): ${{ github.event.inputs.services }}"
+            echo "full_restart=false"                          >> "$GITHUB_OUTPUT"
+            echo "services=${{ github.event.inputs.services }}" >> "$GITHUB_OUTPUT"
+            echo "skip=false"                                   >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only HEAD~1 HEAD || true)
+          echo "=== Changed files ==="; echo "$CHANGED"; echo "===================="
+
+          FULL_RESTART=false
+          SERVICES=""
+          add(){ [[ " $SERVICES " =~ " $1 " ]] || SERVICES="$SERVICES $1"; }
+
+          while IFS= read -r f; do
+            case "$f" in
+              docker-compose.yml|pom.xml|services/shared-lib/*|infrastructure/*) FULL_RESTART=true ;;
+              services/api-gateway/*)              add "api-gateway" ;;
+              services/auth-service/*)             add "auth-service" ;;
+              services/resource-service/*)         add "resource-service" ;;
+              services/call-intake-service/*)      add "call-intake-service" ;;
+              services/incident-service/*)         add "incident-service" ;;
+              services/dispatch-service/*)         add "dispatch-service" ;;
+              services/geo-query-service/*)        add "geo-query-service" ;;
+              services/shift-planning-service/*)   add "shift-planning-service" ;;
+              services/location-ingest-service/*)  add "location-ingest-service" ;;
+              services/location-simulator-service/*) add "location-simulator-service" ;;
+              services/call-simulator-service/*)   add "call-simulator-service" ;;
+              services/crime-simulator-service/*)  add "crime-simulator-service" ;;
+              services/routing-service/*)          add "routing-service" ;;
+              frontend/*)                          add "frontend" ;;
+            esac
+          done <<< "$CHANGED"
+
+          SERVICES=$(echo "$SERVICES" | xargs)
+
+          if [ "$FULL_RESTART" = "true" ]; then
+            echo "→ FULL RESTART"
+            echo "full_restart=true" >> "$GITHUB_OUTPUT"; echo "services=" >> "$GITHUB_OUTPUT"; echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$SERVICES" ]; then
+            echo "→ SKIP — no deployable files changed"
+            echo "full_restart=false" >> "$GITHUB_OUTPUT"; echo "services=" >> "$GITHUB_OUTPUT"; echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "→ TARGETED: $SERVICES"
+            echo "full_restart=false" >> "$GITHUB_OUTPUT"; echo "services=$SERVICES" >> "$GITHUB_OUTPUT"; echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.skip != 'true'
+    steps:
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Deploy to server (with retry)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          FULL_RESTART: ${{ needs.detect-changes.outputs.full_restart }}
+          SERVICES: ${{ needs.detect-changes.outputs.services }}
+        run: |
+          SSH="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=90 ${DEPLOY_USER}@${DEPLOY_HOST}"
+          for attempt in 1 2 3; do
+            echo "=== SSH attempt ${attempt}/3 ==="
+            if $SSH << REMOTE
+              set -e
+              if [ ! -d /opt/mpscc/.git ]; then
+                git clone https://github.com/darrenleeatkinson/mpscc.git /opt/mpscc
+              fi
+              cd /opt/mpscc
+              git fetch origin
+              git reset --hard origin/main
+              [ -f .env ] || cp .env.example .env
+              if [ "${FULL_RESTART}" = "true" ]; then
+                echo "=== Full restart ==="
+                docker compose up --build -d --remove-orphans
+              else
+                echo "=== Targeted rebuild: ${SERVICES} ==="
+                docker compose up --build -d ${SERVICES}
+              fi
+              docker compose ps
+          REMOTE
+            then
+              echo "✅ Deploy succeeded on attempt ${attempt}"; exit 0
+            fi
+            echo "Attempt ${attempt} failed — retrying in 15s..."; sleep 15
+          done
+          echo "❌ All 3 attempts failed"; exit 1

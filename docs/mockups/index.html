@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MPSCC · Command & Control — Design Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/mpscc.css"/>
+<style>
+  .hero{position:relative;padding:64px 0 34px}
+  .hero h1{font-size:2.9rem;line-height:1.05;max-width:16ch}
+  .hero .grad{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .hero p.lead{font-size:1.12rem;max-width:62ch;color:var(--text-dim)}
+  .navcard{display:flex;flex-direction:column;gap:10px;text-decoration:none;color:inherit;min-height:172px}
+  .navcard:hover{text-decoration:none}
+  .navcard .ico{font-size:26px;width:52px;height:52px;border-radius:13px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--hair)}
+  .navcard h3{margin:0}
+  .navcard .go{margin-top:auto;color:var(--accent-2);font-weight:600;font-size:.85rem}
+  .persona-tag{position:absolute;top:16px;right:16px}
+  .flowline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.82rem}
+  .flowline .step{padding:8px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--panel);white-space:nowrap}
+  .flowline .arw{color:var(--accent-2)}
+  .doc-row{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--hair);border-radius:11px;background:var(--panel);text-decoration:none;color:inherit;transition:all .18s}
+  .doc-row:hover{transform:translateY(-2px);border-color:var(--hair-strong);text-decoration:none}
+  .doc-row .num{font-family:var(--mono);color:var(--accent-2);font-weight:700;width:26px}
+  .doc-row .arw{margin-left:auto;color:var(--text-faint)}
+  .disclaimer{border-left:3px solid var(--p2);background:rgba(245,158,11,.06)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="badge">🛡</span><div>MPSCC<small>Command &amp; Control</small></div></div>
+  <span class="pill">Design Portal · v1.0</span>
+  <span class="pill">Synthetic / Prototype</span>
+  <span class="clock" id="clock">--:--:--</span>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-t="overview">Overview</div>
+  <div class="tab" data-t="explore">Explore the Design</div>
+  <div class="tab" data-t="numbers">The Numbers</div>
+  <div class="tab" data-t="docs">Documentation</div>
+</div>
+
+<div class="wrap">
+
+<!-- ============ OVERVIEW ============ -->
+<section class="tabpane active" id="overview">
+  <div class="hero">
+    <span class="chip accent" style="margin-bottom:14px">Metropolitan Police Service · 999 / 111 simulation</span>
+    <h1>A living <span class="grad">command &amp; control</span> platform for Greater London.</h1>
+    <p class="lead">From the moment British Telecom hands over a 999 call, MPSCC follows the whole journey —
+      intake, assessment, incident creation, dispatch, and the live movement of tens of thousands of
+      officers across the streets of London — and makes every second of it observable.</p>
+    <div class="row" style="margin-top:22px;flex-wrap:wrap">
+      <a class="btn primary big" href="dispatch.html">🗺 Open Dispatch Console</a>
+      <a class="btn big" href="architecture-hld.html">🏗 High-Level Design</a>
+      <a class="btn big" href="architecture-lld.html">🔧 Low-Level Design</a>
+    </div>
+  </div>
+
+  <div class="grid grid-3" style="margin-top:8px">
+    <div class="panel"><div class="panel-title">Persona 1</div>
+      <h3>999 First Responder</h3>
+      <p>Answers the BT hand-over, captures caller &amp; location, and assesses the incident as the
+        crime detail streams in. Keyboard-first for the 20,000-calls-a-day peak.</p>
+      <a class="go" href="responder.html">Open mockup →</a></div>
+    <div class="panel"><div class="panel-title">Persona 2</div>
+      <h3>Dispatcher</h3>
+      <p>Works a prioritised, aging incident queue. Presses <b>READY</b> to take the next call, then
+        finds and dispatches the nearest trained resource on a live map.</p>
+      <a class="go" href="dispatch.html">Open mockup →</a></div>
+    <div class="panel"><div class="panel-title">Persona 3</div>
+      <h3>Resource &amp; Shift Planner</h3>
+      <p>Rosters 40,000 officers onto 10-hour shifts against a demand curve, balances 110 stations,
+        and keeps 6,000 firearms officers on continuous cover.</p>
+      <a class="go" href="resource-planner.html">Open mockup →</a></div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="panel-title">End-to-end journey</div>
+    <div class="flowline">
+      <span class="step">☎ BT hand-over</span><span class="arw">→</span>
+      <span class="step">Intake queue <span class="faint mono">(Kafka)</span></span><span class="arw">→</span>
+      <span class="step">👤 Responder captures &amp; assesses</span><span class="arw">→</span>
+      <span class="step">🧪 Simulators enrich</span><span class="arw">→</span>
+      <span class="step">📄 Incident saved <span class="faint mono">DDMMYY-NNNNNNN</span></span><span class="arw">→</span>
+      <span class="step">📋 Dispatch queue</span><span class="arw">→</span>
+      <span class="step">🟢 READY / take-next</span><span class="arw">→</span>
+      <span class="step">🚓 Assign → on route → arrived → resolved</span>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:16px">
+    <div class="panel">
+      <div class="panel-title">Live intake queue (illustrative)</div>
+      <div class="row" style="align-items:center;gap:14px">
+        <div class="gauge" style="flex:1"><i id="qbar" style="width:40%"></i></div>
+        <div class="tnum" style="font-size:1.4rem;font-weight:700" id="qnum">18</div>
+      </div>
+      <p class="faint" style="margin-top:10px">The queue ebbs and flows with a daily demand curve — busiest on
+        Friday/Saturday evenings, quietest 23:00–06:00.</p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Guiding principle</div>
+      <h3 style="margin-top:2px">The map only renders what you can see.</h3>
+      <p>MPSCC never pushes 3,000 updates/sec to a browser. Clients subscribe to a <b>viewport</b>
+        (bounds + zoom); the backend streams only the resources inside that box, clustered when zoomed
+        out. That single decision is what makes the scale tractable.</p>
+    </div>
+  </div>
+
+  <div class="panel disclaimer" style="margin-top:16px">
+    <p style="margin:0"><b>Prototype &amp; simulation.</b> Synthetic data only. Not connected to any real
+      emergency-service, telephony, or police system. Built to demonstrate a modern C2 experience and to
+      generate rich Dynatrace observability telemetry.</p>
+  </div>
+</section>
+
+<!-- ============ EXPLORE ============ -->
+<section class="tabpane" id="explore">
+  <h2 style="margin-top:26px">Explore the design</h2>
+  <p>Interactive design documents and high-fidelity UI mockups. Each opens as its own rich, live page.</p>
+
+  <div class="panel-title" style="margin-top:20px">Architecture</div>
+  <div class="grid grid-2">
+    <a class="panel hover navcard" href="architecture-hld.html">
+      <div class="ico">🏗</div><h3>High-Level Design</h3>
+      <p>System context, container topology, the end-to-end journey, tech-stack rationale and the headline numbers — for architects and stakeholders.</p>
+      <span class="go">Open interactive HLD →</span>
+    </a>
+    <a class="panel hover navcard" href="architecture-lld.html">
+      <div class="ico">🔧</div><h3>Low-Level Design</h3>
+      <p>Every microservice &amp; API, Kafka topics, the data model, the location pipeline internals and sequence flows — for engineers.</p>
+      <span class="go">Open interactive LLD →</span>
+    </a>
+  </div>
+
+  <div class="panel-title" style="margin-top:24px">UI mockups — the three personas</div>
+  <div class="grid grid-3">
+    <a class="panel hover navcard" href="responder.html" style="position:relative">
+      <span class="chip persona-tag">P1</span>
+      <div class="ico">☎</div><h3>Responder Console</h3>
+      <p>Live intake gauge, BT location fix, streaming crime assessment, priority &amp; incident creation.</p>
+      <span class="go">Open →</span>
+    </a>
+    <a class="panel hover navcard" href="dispatch.html" style="position:relative">
+      <span class="chip persona-tag">P2</span>
+      <div class="ico">🗺</div><h3>Dispatch Console</h3>
+      <p>Prioritised aging queue, live map with moving resources, nearest-trained-resource &amp; drag-to-assign.</p>
+      <span class="go">Open →</span>
+    </a>
+    <a class="panel hover navcard" href="resource-planner.html" style="position:relative">
+      <span class="chip persona-tag">P3</span>
+      <div class="ico">📊</div><h3>Planner Console</h3>
+      <p>Demand-vs-staffed heatmap, firearms cover, station balance, roster grid and fleet utilisation.</p>
+      <span class="go">Open →</span>
+    </a>
+  </div>
+</section>
+
+<!-- ============ NUMBERS ============ -->
+<section class="tabpane" id="numbers">
+  <h2 style="margin-top:26px">Designed for these numbers</h2>
+  <div class="grid grid-4" style="margin-top:8px">
+    <div class="panel stat"><span class="n">20,000</span><span class="l">999/111 calls/day peak</span></div>
+    <div class="panel stat"><span class="n">40,000</span><span class="l">officers modelled</span></div>
+    <div class="panel stat"><span class="n">~15,000</span><span class="l">on-shift at peak</span></div>
+    <div class="panel stat"><span class="n">~3,000/s</span><span class="l">location updates</span></div>
+    <div class="panel stat"><span class="n">110</span><span class="l">stations &amp; bases</span></div>
+    <div class="panel stat"><span class="n">3</span><span class="l">command centres</span></div>
+    <div class="panel stat"><span class="n">6,000</span><span class="l">firearms-trained</span></div>
+    <div class="panel stat"><span class="n">40</span><span class="l">crime types</span></div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:16px">
+    <div class="panel">
+      <div class="panel-title">Fleet</div>
+      <table>
+        <tr><th>Type</th><th>Count</th><th>Seats</th></tr>
+        <tr><td>🚗 Car</td><td class="tnum">8,000</td><td>2</td></tr>
+        <tr><td>🚐 Van</td><td class="tnum">1,000</td><td>up to 10</td></tr>
+        <tr><td>🏍 Motorbike</td><td class="tnum">500</td><td>1</td></tr>
+        <tr><td>🛵 Scooter</td><td class="tnum">~200</td><td>1</td></tr>
+        <tr><td>🚲 Pushbike</td><td class="tnum">600</td><td>1</td></tr>
+        <tr><td>🐕 Dog car</td><td class="tnum">~60</td><td>1 (+dog)</td></tr>
+        <tr><td>🐎 Horse</td><td class="tnum">~30</td><td>1</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Priority model</div>
+      <table>
+        <tr><th>P</th><th>Meaning</th><th>SLA</th></tr>
+        <tr><td><span class="prio prio-1">P1</span></td><td>Emergency — danger to life / in progress</td><td>≤ 10 min</td></tr>
+        <tr><td><span class="prio prio-2">P2</span></td><td>Priority</td><td>~1 hour</td></tr>
+        <tr><td><span class="prio prio-3">P3</span></td><td>Prompt</td><td>same shift</td></tr>
+        <tr><td><span class="prio prio-4">P4</span></td><td>Scheduled</td><td>within days</td></tr>
+        <tr><td><span class="prio prio-5">P5</span></td><td>Resolution / follow-up</td><td>no deployment</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="panel-title">Non-functional targets</div>
+    <table>
+      <tr><th>Concern</th><th>Target</th></tr>
+      <tr><td>Location ingest</td><td>3,000 msg/sec sustained · 20,000 burst</td></tr>
+      <tr><td>Redis GEO write</td><td>&lt; 1 ms p99</td></tr>
+      <tr><td>Viewport query (visible resources)</td><td>&lt; 50 ms p95 end-to-end</td></tr>
+      <tr><td>Incident create → on dispatch queue</td><td>&lt; 1 s</td></tr>
+      <tr><td>Map interaction</td><td>60 fps, GPU-rendered</td></tr>
+      <tr><td>Point-in-time history query</td><td>&lt; 500 ms (officer/day)</td></tr>
+      <tr><td>Nearest-trained-resource</td><td>&lt; 100 ms p95</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============ DOCS ============ -->
+<section class="tabpane" id="docs">
+  <h2 style="margin-top:26px">Written design package</h2>
+  <p>The full narrative lives in the numbered markdown documents in <span class="mono">docs/</span>.
+     These HTML pages are the interactive companion.</p>
+  <div class="grid grid-2" style="margin-top:8px">
+    <a class="doc-row" href="../00-executive-summary.md"><span class="num">00</span><span>Executive Summary</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../01-vision-and-personas.md"><span class="num">01</span><span>Vision &amp; Personas</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../02-system-architecture.md"><span class="num">02</span><span>System Architecture</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../03-data-model.md"><span class="num">03</span><span>Data Model (40 crimes, schema)</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../04-microservices.md"><span class="num">04</span><span>Microservices &amp; Kafka</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../05-realtime-location-architecture.md"><span class="num">05</span><span>Real-Time Location Architecture</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../06-resource-and-shift-planning.md"><span class="num">06</span><span>Resource &amp; Shift Planning</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../07-ui-ux-design.md"><span class="num">07</span><span>UI / UX Design</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../08-security-rbac.md"><span class="num">08</span><span>Security &amp; RBAC</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../09-deployment-devops.md"><span class="num">09</span><span>Deployment &amp; DevOps</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../10-delivery-phases.md"><span class="num">10</span><span>Delivery Phases</span><span class="arw">→</span></a>
+    <a class="doc-row" href="../11-data-sources-and-seed.md"><span class="num">11</span><span>Data Sources &amp; Seed Data</span><span class="arw">→</span></a>
+  </div>
+  <p class="faint" style="margin-top:14px">Tip: open the <span class="mono">.md</span> files in your editor or a markdown viewer.
+     The architecture and mockup pages above render the same content interactively.</p>
+</section>
+
+</div>
+
+<div class="footer">MPSCC — Metropolitan Police Service Command &amp; Control · Design portal · Synthetic prototype for demonstration &amp; observability</div>
+
+<script>
+  // live clock (Europe/London)
+  function tick(){
+    const t=new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/London'});
+    document.getElementById('clock').textContent=t;
+  }
+  tick(); setInterval(tick,1000);
+
+  // tab switching
+  const tabs=document.querySelectorAll('#tabs .tab');
+  tabs.forEach(t=>t.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.t).classList.add('active');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }));
+
+  // illustrative intake queue ebb/flow
+  let q=18;
+  setInterval(()=>{
+    q=Math.max(4,Math.min(38,q+Math.round((Math.random()-0.45)*5)));
+    document.getElementById('qnum').textContent=q;
+    document.getElementById('qbar').style.width=(q/40*100).toFixed(0)+'%';
+  },1400);
+</script>
+</body>
+</html>

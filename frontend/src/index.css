@@ -1,0 +1,293 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   MPSCC design tokens — control-room glassmorphism.
+   Mirrors docs/mockups/assets/mpscc.css so the React shell
+   matches the HTML mockups exactly.
+   ============================================================ */
+:root {
+  /* base surfaces */
+  --bg-0: #070b16;
+  --bg-1: #0a0e1a;
+  --bg-2: #111827;
+  --panel: rgba(255, 255, 255, 0.055);
+  --panel-2: rgba(255, 255, 255, 0.09);
+  --hair: rgba(255, 255, 255, 0.12);
+  --hair-strong: rgba(255, 255, 255, 0.22);
+
+  /* text */
+  --text: #e8edf7;
+  --text-dim: #9aa6bd;
+  --text-faint: #5f6b83;
+
+  /* brand accent */
+  --accent: #2f6bff;
+  --accent-2: #22d3ee;
+  --accent-grad: linear-gradient(135deg, #2f6bff 0%, #22d3ee 100%);
+
+  /* priority palette */
+  --p1: #ef4444;
+  --p2: #f59e0b;
+  --p3: #eab308;
+  --p4: #3b82f6;
+  --p5: #6b7280;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.7);
+  --glow: 0 0 0 1px var(--hair), 0 8px 40px -12px rgba(47, 107, 255, 0.35);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 12% -10%, rgba(47, 107, 255, 0.18), transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, rgba(34, 211, 238, 0.12), transparent 55%),
+    radial-gradient(1000px 800px at 50% 120%, rgba(168, 85, 247, 0.1), transparent 60%),
+    linear-gradient(180deg, var(--bg-1), var(--bg-2));
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+.mono {
+  font-family: var(--mono);
+}
+.dim {
+  color: var(--text-dim);
+}
+.faint {
+  color: var(--text-faint);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ---------- glass panel ---------- */
+.panel {
+  background: var(--panel);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.panel-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+}
+
+/* ---------- interactive card ---------- */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  border-color: var(--hair-strong);
+  box-shadow: var(--glow);
+}
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 24px;
+  background: rgba(7, 11, 22, 0.72);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--hair);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.brand .badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-grad);
+  box-shadow: 0 6px 20px -6px rgba(47, 107, 255, 0.7);
+  font-size: 16px;
+}
+.brand small {
+  display: block;
+  font-weight: 500;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.clock {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.pill {
+  font-size: 0.7rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  color: var(--text-dim);
+  background: var(--panel);
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--hair);
+  background: var(--panel-2);
+  color: var(--text);
+  transition: all 0.18s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--hair-strong);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn.primary {
+  background: var(--accent-grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 30px -10px rgba(47, 107, 255, 0.7);
+}
+.btn.danger {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  border-color: transparent;
+  color: #fff;
+}
+.btn.big {
+  font-size: 1rem;
+  padding: 13px 22px;
+}
+
+/* ---------- form inputs ---------- */
+.input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  padding: 11px 14px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.input::placeholder {
+  color: var(--text-faint);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.25);
+}
+.label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+/* ---------- chips ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  color: var(--text-dim);
+}
+.chip.accent {
+  color: #fff;
+  background: var(--accent-grad);
+  border-color: transparent;
+}
+
+/* ---------- error banner ---------- */
+.error-banner {
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  font-size: 0.85rem;
+  font-weight: 550;
+  color: #fecaca;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(220, 38, 38, 0.14));
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-in {
+  animation: fade 0.35s ease;
+}

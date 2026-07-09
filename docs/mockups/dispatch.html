@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPSCC · Dispatch Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap">
+<link rel="stylesheet" href="assets/mpscc.css">
+<style>
+/* ---- page-specific layout only; everything else reuses mpscc.css ---- */
+html,body{height:100%;overflow:hidden}
+.app{display:flex;flex-direction:column;height:100vh}
+.topbar .active-pill{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);
+  font-size:.78rem;padding:5px 12px;border-radius:999px;border:1px solid var(--hair);
+  background:var(--panel);color:var(--text)}
+.topbar .active-pill b{color:var(--accent-2)}
+.topbar .ready-wrap{margin-left:8px}
+
+.workspace{flex:1;display:grid;grid-template-columns:288px 1fr 328px;gap:12px;
+  padding:12px;min-height:0}
+.workspace>section{min-height:0;display:flex;flex-direction:column}
+.panel.fill{flex:1;min-height:0;display:flex;flex-direction:column;padding:14px}
+.pcap{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.pcap .cnt{font-family:var(--mono);font-size:.72rem;color:var(--text-faint)}
+
+/* ---- incident queue ---- */
+.queue{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+.iq{position:relative;border:1px solid var(--hair);border-radius:12px;padding:9px 11px;
+  background:var(--panel);cursor:pointer;transition:border-color .18s,transform .18s,background .18s;
+  display:flex;flex-direction:column;gap:6px}
+.iq:hover{border-color:var(--hair-strong);transform:translateX(2px);background:var(--panel-2)}
+.iq.active-row{border-color:var(--accent);box-shadow:var(--glow)}
+.iq.taken{opacity:.35;filter:grayscale(.4)}
+.iq .top{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.iq .ct{font-weight:650;font-size:.82rem;line-height:1.15}
+.iq .meta{display:flex;align-items:center;justify-content:space-between;font-size:.72rem;color:var(--text-dim)}
+.iq .ref{font-family:var(--mono);letter-spacing:.02em}
+.iq .age{font-family:var(--mono);display:inline-flex;align-items:center;gap:4px}
+.iq .age.hot{color:var(--p1);font-weight:600}
+.iq .brow{border-left:3px solid transparent}
+.slidein{animation:slidein .55s cubic-bezier(.2,.9,.3,1)}
+@keyframes slidein{from{opacity:0;transform:translateX(-26px) scale(.96)}to{opacity:1;transform:none}}
+.q-p1{box-shadow:0 0 0 1px rgba(239,68,68,.35)}
+
+/* ---- map ---- */
+.mapwrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px}
+.mapstage{position:relative;flex:1;min-height:0;border-radius:14px;overflow:hidden;
+  border:1px solid var(--hair);
+  background:radial-gradient(900px 500px at 50% 40%,rgba(47,107,255,.10),transparent 70%),linear-gradient(180deg,#070c18,#0a1120)}
+.mapstage svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mapctrls{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:6}
+.mapctrls .btn{padding:7px 11px;font-size:.8rem;background:rgba(10,16,28,.82);backdrop-filter:blur(8px)}
+.zoombox{display:flex;flex-direction:column;overflow:hidden;border-radius:10px;border:1px solid var(--hair);background:rgba(10,16,28,.82)}
+.zoombox button{cursor:pointer;border:0;background:transparent;color:var(--text);font-size:1.05rem;
+  font-family:inherit;padding:6px 12px;transition:background .15s}
+.zoombox button:hover{background:var(--panel-2)}
+.zoombox button+button{border-top:1px solid var(--hair)}
+.maplegend{position:absolute;left:12px;bottom:12px;z-index:6;background:rgba(7,11,22,.78);
+  backdrop-filter:blur(10px);border:1px solid var(--hair);border-radius:12px;padding:9px 12px;
+  display:flex;gap:7px 16px;flex-wrap:wrap;max-width:62%}
+.maplegend .legend span{font-size:.72rem}
+.zbadge{position:absolute;left:12px;top:12px;z-index:6;font-family:var(--mono);font-size:.72rem;
+  color:var(--text-dim);background:rgba(7,11,22,.72);border:1px solid var(--hair);border-radius:8px;padding:4px 9px}
+.dragging-over{outline:2px dashed var(--accent-2);outline-offset:-6px}
+
+/* map svg element helpers */
+.res-hit{cursor:default}
+text.reslabel{font-family:var(--mono);font-size:9px;fill:var(--text-dim)}
+.routeline{fill:none;stroke:var(--st-onroute);stroke-width:2.5;stroke-linecap:round;
+  stroke-dasharray:7 6;filter:drop-shadow(0 0 5px rgba(34,211,238,.7));
+  animation:dash 1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-26}}
+
+/* ---- active banner ---- */
+.abanner{display:flex;align-items:center;gap:14px}
+.abanner .ttl{font-size:1.02rem;font-weight:700}
+.abanner .ref{font-family:var(--mono);opacity:.9;font-size:.85rem}
+.abanner .age{margin-left:auto;font-family:var(--mono);font-weight:700;font-size:1.05rem}
+.abanner .tags{display:flex;gap:6px}
+.abanner.empty{background:var(--panel);color:var(--text-dim);border:1px dashed var(--hair);font-weight:500}
+
+/* ---- timeline ---- */
+.timeline{display:flex;align-items:center;gap:0;margin-top:2px}
+.tl-step{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative;font-size:.66rem;color:var(--text-faint);text-align:center}
+.tl-step .dotc{width:16px;height:16px;border-radius:50%;border:2px solid var(--hair-strong);
+  background:var(--bg-2);z-index:2;transition:all .3s}
+.tl-step.done .dotc{background:var(--st-available);border-color:var(--st-available);box-shadow:0 0 10px rgba(34,197,94,.6)}
+.tl-step.cur .dotc{background:var(--accent-2);border-color:var(--accent-2);box-shadow:0 0 12px rgba(34,211,238,.8)}
+.tl-step.done,.tl-step.cur{color:var(--text)}
+.tl-step::before{content:'';position:absolute;top:7px;left:-50%;width:100%;height:2px;background:var(--hair);z-index:1}
+.tl-step:first-child::before{display:none}
+.tl-step.done::before,.tl-step.cur::before{background:var(--st-available)}
+
+/* ---- resources ---- */
+.rescol{display:flex;flex-direction:column;gap:10px;min-height:0;flex:1}
+.filtrow{display:flex;flex-direction:column;gap:8px}
+.filtrow select{font-family:inherit;font-size:.82rem;color:var(--text);background:var(--panel-2);
+  border:1px solid var(--hair);border-radius:10px;padding:9px 11px;width:100%}
+.filtrow select:focus{outline:none;border-color:var(--accent)}
+.unitlist{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+.unit{border:1px solid var(--hair);border-radius:12px;padding:9px 11px;background:var(--panel);
+  cursor:grab;transition:border-color .18s,transform .18s,background .18s;display:flex;flex-direction:column;gap:6px}
+.unit:hover{border-color:var(--hair-strong);background:var(--panel-2)}
+.unit:active{cursor:grabbing}
+.unit.assigned{cursor:default;border-color:var(--st-onroute);box-shadow:0 0 0 1px rgba(34,211,238,.35)}
+.unit .u1{display:flex;align-items:center;gap:8px}
+.unit .modeic{font-size:1.2rem;line-height:1}
+.unit .collar{font-family:var(--mono);font-weight:650;font-size:.82rem}
+.unit .eta{margin-left:auto;font-family:var(--mono);font-size:.78rem}
+.unit .rank{font-size:.68rem;color:var(--text-faint)}
+.unit .skills{display:flex;gap:4px;flex-wrap:wrap}
+.chip.sm{font-size:.62rem;padding:2px 7px}
+.stbar{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--text-dim)}
+.assigned-box{max-height:132px}
+.assigned-box .unit{background:linear-gradient(135deg,rgba(34,211,238,.09),transparent)}
+.empty-note{color:var(--text-faint);font-size:.78rem;padding:6px 2px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(10,16,28,.95);border:1px solid var(--hair-strong);border-radius:12px;
+  padding:11px 18px;font-size:.85rem;box-shadow:var(--shadow);opacity:0;pointer-events:none;
+  transition:all .3s;z-index:200;display:flex;align-items:center;gap:10px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== TOP BAR ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="badge">🛡</span>
+      <span>MPSCC<small>Dispatch Console</small></span>
+    </div>
+    <span class="pill">🟢 SIM LIVE</span>
+    <span class="pill">Bow MetCC</span>
+    <div class="ready-wrap">
+      <button class="btn primary big" id="readyBtn">READY ▶ take next</button>
+    </div>
+    <span class="active-pill" id="activePill">Active: <b>— none —</b></span>
+    <span class="clock tnum" id="clock">--:--:--</span>
+    <a href="index.html">← Design Portal</a>
+  </header>
+
+  <!-- ===================== WORKSPACE ===================== -->
+  <div class="workspace">
+
+    <!-- LEFT: incident queue -->
+    <section>
+      <div class="panel fill">
+        <div class="pcap">
+          <div class="panel-title" style="margin:0">Incident Queue</div>
+          <span class="cnt"><span id="qWaiting">0</span> waiting · sorted prio+age</span>
+        </div>
+        <div class="queue scroll" id="queue"></div>
+      </div>
+    </section>
+
+    <!-- CENTER: banner + map + timeline -->
+    <section class="mapwrap">
+      <div class="banner-5 abanner empty" id="banner">
+        <span>No active incident — press <b>READY ▶ take next</b> to command the top of the queue</span>
+      </div>
+
+      <div class="panel fill" style="gap:10px">
+        <div class="mapstage" id="mapstage">
+          <svg id="map" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <radialGradient id="pinGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="rgba(239,68,68,.55)"/>
+                <stop offset="100%" stop-color="rgba(239,68,68,0)"/>
+              </radialGradient>
+            </defs>
+            <g id="worldG">
+              <g id="gridG"></g>
+              <g id="routeG"></g>
+              <g id="stationG"></g>
+              <g id="clusterG"></g>
+              <g id="resG"></g>
+              <g id="pinG"></g>
+            </g>
+          </svg>
+          <span class="zbadge" id="zBadge">zoom 1.0×</span>
+          <div class="mapctrls">
+            <button class="btn" id="recentre">⌖ Recentre</button>
+            <div class="zoombox">
+              <button id="zoomIn" title="Zoom in">+</button>
+              <button id="zoomOut" title="Zoom out">−</button>
+            </div>
+          </div>
+          <div class="maplegend">
+            <div class="legend">
+              <span><span class="dot" style="background:var(--st-available)"></span>Available</span>
+              <span><span class="dot" style="background:var(--st-onroute)"></span>On route</span>
+              <span><span class="dot" style="background:var(--st-onscene)"></span>On scene</span>
+              <span>🏢 Station</span>
+              <span>🏛 Command</span>
+              <span>🔴 Incident</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel-title">Incident timeline · audit trail</div>
+          <div class="timeline" id="timeline"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: resources -->
+    <section>
+      <div class="panel fill rescol">
+        <div>
+          <div class="pcap">
+            <div class="panel-title" style="margin:0">Resources</div>
+            <span class="cnt" id="resCnt">0 nearby</span>
+          </div>
+          <div class="filtrow">
+            <select id="skillFilter" title="Skill filter">
+              <option value="ANY">Skill filter — ANY</option>
+              <option value="FIREARMS">FIREARMS</option>
+              <option value="DOG_HANDLER">DOG_HANDLER</option>
+              <option value="TRAFFIC">TRAFFIC</option>
+              <option value="PUBLIC_ORDER">PUBLIC_ORDER</option>
+              <option value="MEDICAL_FIRST_AID">MEDICAL_FIRST_AID</option>
+              <option value="ADVANCED_DRIVER">ADVANCED_DRIVER</option>
+            </select>
+            <button class="btn primary" id="nearestBtn">⚡ Select nearest trained resource</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel-title" style="margin-bottom:6px">Nearest units · ranked by ETA · drag → map to assign</div>
+          <div class="unitlist scroll" id="unitList"></div>
+        </div>
+
+        <div>
+          <div class="panel-title" style="margin-bottom:6px">Assigned to active incident</div>
+          <div class="assigned-box scroll" id="assignedBox"><div class="empty-note">No units assigned yet.</div></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   MPSCC Dispatch Console — live mockup (vanilla JS)
+   ============================================================ */
+
+/* ---------- reference data ---------- */
+const CRIMES = {
+  MURDER:{n:"Murder",p:1}, FIREARMS_INCIDENT:{n:"Firearms discharge",p:1},
+  AGG_BURGLARY:{n:"Aggravated burglary",p:1}, KNIFE_CRIME:{n:"Knife crime",p:1},
+  RTC_INJURY:{n:"RTC — injury",p:1}, DOMESTIC_ABUSE:{n:"Domestic abuse (in progress)",p:1},
+  ROBBERY:{n:"Robbery (personal)",p:2}, ABH:{n:"Actual bodily harm",p:2},
+  DANGEROUS_DRIVING:{n:"Dangerous driving",p:2}, PUBLIC_ORDER:{n:"Public order / affray",p:2},
+  ASSAULT_POLICE:{n:"Assault on emergency worker",p:2},
+  COMMON_ASSAULT:{n:"Common assault",p:3}, BURGLARY_COMMERCIAL:{n:"Burglary — commercial",p:3},
+  DRUG_DEALING:{n:"Drug dealing / supply",p:3}, VEHICLE_THEFT:{n:"Theft of motor vehicle",p:3},
+  THEFT_PERSON:{n:"Theft from the person",p:3}, MISSING_PERSON:{n:"Missing person",p:3},
+  DRUNK_DISORDERLY:{n:"Drunk & disorderly",p:4}, SHOPLIFTING:{n:"Shoplifting",p:4},
+  ASB:{n:"Anti-social behaviour",p:4}, CRIMINAL_DAMAGE:{n:"Criminal damage",p:4},
+  DRUG_POSSESSION:{n:"Drug possession",p:4}, FRAUD:{n:"Fraud",p:5}
+};
+const CRIME_KEYS = Object.keys(CRIMES);
+const BOROUGHS = ["Westminster","Camden","Lambeth","Hackney","Islington","Southwark",
+  "Tower Hamlets","Brent","Croydon","Ealing","Wandsworth","Newham"];
+const PRIO_ICON = {1:"🔴",2:"🟠",3:"🟡",4:"🔵",5:"⚪"};
+const MODES = {
+  FOOT:{ic:"🚶",spd:0.9}, CAR:{ic:"🚗",spd:2.4}, VAN:{ic:"🚐",spd:2.0},
+  MOTORBIKE:{ic:"🏍",spd:2.9}, SCOOTER:{ic:"🛵",spd:2.2}, PUSHBIKE:{ic:"🚲",spd:1.5},
+  DOG_CAR:{ic:"🐕",spd:2.2}, HORSE:{ic:"🐎",spd:1.3}
+};
+const SKILLS_POOL = ["FIREARMS","DOG_HANDLER","TRAFFIC","PUBLIC_ORDER","MEDICAL_FIRST_AID","ADVANCED_DRIVER"];
+const RANKS = ["PC","PC","PC","PS","PS","INSP","DC"];
+const STATUS_COL = {available:"var(--st-available)",on_route:"var(--st-onroute)",on_scene:"var(--st-onscene)"};
+
+/* ---------- utils ---------- */
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const ri=(a,b)=>Math.floor(rnd(a,b+1));
+const pick=a=>a[ri(0,a.length-1)];
+const $=id=>document.getElementById(id);
+function refDate(){const d=new Date();const p=n=>String(n).padStart(2,"0");return p(d.getDate())+p(d.getMonth()+1)+String(d.getFullYear()).slice(2);}
+let SEQ = 10037;
+function nextRef(){return refDate()+"-"+String(SEQ++).padStart(7,"0");}
+function fmtAge(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600);const m=Math.floor((sec%3600)/60);const s=sec%60;const p=n=>String(n).padStart(2,"0");return h>0?(h+":"+p(m)+":"+p(s)):(p(m)+":"+p(s));}
+function collar(){return pick(RANKS)+" "+ri(1000,9999);}
+function officerSkills(){const n=ri(0,3);const s=new Set();while(s.size<n)s.add(pick(SKILLS_POOL));return[...s];}
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg){const t=$("toast");t.innerHTML=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2600);}
+
+/* ============================================================
+   CLOCK (Europe/London)
+   ============================================================ */
+function tickClock(){
+  const s=new Date().toLocaleTimeString("en-GB",{timeZone:"Europe/London",hour12:false});
+  $("clock").textContent="🇬🇧 London "+s;
+}
+setInterval(tickClock,1000); tickClock();
+
+/* ============================================================
+   INCIDENT QUEUE
+   ============================================================ */
+let incidents=[]; // {id,ref,code,name,prio,borough,createdAt,taken}
+let INC_ID=1;
+function mkIncident(ageSec){
+  const code=pick(CRIME_KEYS); const c=CRIMES[code];
+  return {id:INC_ID++, ref:nextRef(), code, name:c.n, prio:c.p,
+          borough:pick(BOROUGHS), createdAt:Date.now()-(ageSec||0)*1000, taken:false, isNew:false};
+}
+// seed ~10 incidents with a realistic prio spread
+(function seedQueue(){
+  const spread=[1,1,2,2,2,3,3,4,4,5];
+  spread.forEach(p=>{
+    // find a crime of that prio
+    let code; do{code=pick(CRIME_KEYS);}while(CRIMES[code].p!==p);
+    const inc=mkIncident(ri(20,1400));
+    inc.code=code; inc.name=CRIMES[code].n; inc.prio=p;
+    incidents.push(inc);
+  });
+})();
+
+let activeInc=null;
+function sortQueue(){
+  incidents.sort((a,b)=> a.prio-b.prio || a.createdAt-b.createdAt );
+}
+function ageSec(inc){return (Date.now()-inc.createdAt)/1000;}
+
+function renderQueue(){
+  sortQueue();
+  const q=$("queue"); const live=incidents.filter(i=>!i.taken);
+  $("qWaiting").textContent=live.length;
+  // build/refresh rows
+  q.innerHTML="";
+  incidents.forEach(inc=>{
+    const row=document.createElement("div");
+    row.className="iq brow prio-src q-p"+inc.prio;
+    if(inc.taken) row.classList.add("taken");
+    if(activeInc&&inc.id===activeInc.id) row.classList.add("active-row");
+    if(inc.isNew){row.classList.add("slidein");}
+    row.style.borderLeftColor="var(--p"+inc.prio+")";
+    const hot = inc.prio<=2;
+    row.innerHTML=
+      '<div class="top">'
+      + '<span class="prio prio-'+inc.prio+(inc.prio===1?' pulse':'')+'">'+PRIO_ICON[inc.prio]+' P'+inc.prio+'</span>'
+      + '<span class="ref">'+inc.ref+'</span>'
+      +'</div>'
+      +'<div class="ct">'+inc.name+'</div>'
+      +'<div class="meta">'
+      + '<span>'+inc.borough+'</span>'
+      + '<span class="age tnum'+(hot?' hot':'')+'" data-age="'+inc.id+'">⏱ '+fmtAge(ageSec(inc))+'</span>'
+      +'</div>';
+    row.addEventListener("click",()=>{ if(!inc.taken){takeIncident(inc);} });
+    q.appendChild(row);
+    inc.isNew=false;
+  });
+}
+// live age ticks
+function tickAges(){
+  document.querySelectorAll("[data-age]").forEach(el=>{
+    const id=+el.getAttribute("data-age");
+    const inc=incidents.find(i=>i.id===id); if(!inc)return;
+    el.textContent="⏱ "+fmtAge(ageSec(inc));
+  });
+  if(activeInc){ $("bannerAge").textContent=fmtAge(ageSec(activeInc)); }
+}
+
+/* new incidents arrive occasionally */
+function scheduleArrival(){
+  const wait=rnd(9000,17000);
+  setTimeout(()=>{
+    const inc=mkIncident(ri(1,8)); inc.isNew=true;
+    incidents.push(inc);
+    renderQueue(); refreshUnits();
+    toast('🆕 New incident <b>'+inc.ref+'</b> · P'+inc.prio+' '+inc.name);
+    scheduleArrival();
+  },wait);
+}
+
+/* ============================================================
+   READY -> take next / activate incident
+   ============================================================ */
+function takeNext(){
+  sortQueue();
+  const next=incidents.find(i=>!i.taken);
+  if(!next){toast("Queue empty — nothing to take");return;}
+  takeIncident(next);
+}
+function takeIncident(inc){
+  // clear previous active flag (previous stays "taken"/resolved conceptually)
+  if(activeInc){ /* leave prior as taken */ }
+  incidents.forEach(i=>{ if(i.id===inc.id) i.taken=true; });
+  activeInc=inc;
+  clearAssignments();
+  renderBanner();
+  renderQueue();
+  setTimeline("active");
+  $("activePill").innerHTML='Active: <b>'+inc.ref+'</b>';
+  refreshUnits();
+  toast('▶ Took <b>'+inc.ref+'</b> — P'+inc.prio+' '+inc.name+' now ACTIVE');
+}
+function renderBanner(){
+  const b=$("banner");
+  if(!activeInc){b.className="banner-5 abanner empty";b.innerHTML="<span>No active incident — press <b>READY ▶ take next</b></span>";return;}
+  b.className="banner banner-"+activeInc.prio+" abanner";
+  b.innerHTML=
+    '<span class="prio prio-'+activeInc.prio+(activeInc.prio===1?' pulse':'')+'">P'+activeInc.prio+'</span>'
+    +'<span class="ttl">'+activeInc.name+'</span>'
+    +'<span class="ref">'+activeInc.ref+' · '+activeInc.borough+'</span>'
+    +'<span class="tags"><span class="chip sm">'+activeInc.code+'</span></span>'
+    +'<span class="age tnum" id="bannerAge">'+fmtAge(ageSec(activeInc))+'</span>';
+}
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+const TL_STEPS=["created","active","assigned","on route","arrived","resolved"];
+let tlIndex=-1;
+function buildTimeline(){
+  const t=$("timeline");t.innerHTML="";
+  TL_STEPS.forEach((s,i)=>{
+    const d=document.createElement("div");d.className="tl-step";d.dataset.i=i;
+    d.innerHTML='<span class="dotc"></span><span>'+s+'</span>';
+    t.appendChild(d);
+  });
+}
+function setTimeline(step){
+  const idx=TL_STEPS.indexOf(step); if(idx<0)return;
+  tlIndex=Math.max(tlIndex,idx);
+  document.querySelectorAll(".tl-step").forEach((el,i)=>{
+    el.classList.remove("done","cur");
+    if(i<tlIndex)el.classList.add("done");
+    else if(i===tlIndex)el.classList.add("cur");
+  });
+}
+buildTimeline();
+// "created" is implicitly done once we start
+setTimeout(()=>setTimeline("created"),200);
+
+/* ============================================================
+   MAP  — world coords 1000x700, incident pin at centre
+   ============================================================ */
+const PIN={x:500,y:350};
+const worldG=$("worldG"), resG=$("resG"), clusterG=$("clusterG"),
+      stationG=$("stationG"), pinG=$("pinG"), routeG=$("routeG"), gridG=$("gridG");
+let zoom=1.0; const ZMIN=0.6, ZMAX=3.2;
+
+/* street grid */
+(function drawGrid(){
+  let s="";
+  for(let x=0;x<=1000;x+=50){ s+='<line x1="'+x+'" y1="0" x2="'+x+'" y2="700" stroke="rgba(255,255,255,'+(x%100===0?0.06:0.03)+')" stroke-width="1"/>';}
+  for(let y=0;y<=700;y+=50){ s+='<line x1="0" y1="'+y+'" x2="1000" y2="'+y+'" stroke="rgba(255,255,255,'+(y%100===0?0.06:0.03)+')" stroke-width="1"/>';}
+  // a couple of "main roads" + a river-ish curve
+  s+='<path d="M0,470 C220,430 430,520 640,470 S950,430 1000,455" fill="none" stroke="rgba(34,211,238,.14)" stroke-width="10"/>';
+  s+='<line x1="120" y1="0" x2="180" y2="700" stroke="rgba(255,255,255,.05)" stroke-width="6"/>';
+  s+='<line x1="0" y1="220" x2="1000" y2="260" stroke="rgba(255,255,255,.05)" stroke-width="6"/>';
+  s+='<line x1="760" y1="0" x2="700" y2="700" stroke="rgba(255,255,255,.05)" stroke-width="6"/>';
+  gridG.innerHTML=s;
+})();
+
+/* stations & command centres */
+const stations=[
+  {ic:"🏛",label:"Bow CC",x:820,y:150},
+  {ic:"🏛",label:"Lambeth CC",x:200,y:560},
+  {ic:"🏛",label:"Hendon CC",x:150,y:120},
+  {ic:"🏢",label:"Westminster",x:470,y:210},
+  {ic:"🏢",label:"Camden",x:360,y:120},
+  {ic:"🏢",label:"Southwark",x:600,y:520},
+  {ic:"🏢",label:"Hackney",x:720,y:300},
+  {ic:"🏢",label:"Croydon",x:520,y:640},
+];
+
+/* resources */
+let resources=[];
+(function seedResources(){
+  const N=48;
+  for(let i=0;i<N;i++){
+    const modeName=pick(Object.keys(MODES));const m=MODES[modeName];
+    const x=rnd(40,960), y=rnd(40,660);
+    resources.push({
+      id:i, collar:collar(), rank:null, modeName, ic:m.ic, baseSpd:m.spd,
+      x, y, tx:rnd(40,960), ty:rnd(40,660),
+      status:"available", skills:officerSkills(), assigned:false, etaSec:0, prevStatus:null
+    });
+  }
+})();
+
+/* movement */
+function stepResource(r){
+  let tx,ty,spd=r.baseSpd;
+  if(r.status==="on_route"){ tx=PIN.x; ty=PIN.y; spd=r.baseSpd*1.15; }
+  else if(r.status==="on_scene"){ return; }
+  else { tx=r.tx; ty=r.ty; }
+  const dx=tx-r.x, dy=ty-r.y, d=Math.hypot(dx,dy);
+  if(d<spd){
+    if(r.status==="on_route"){ arriveOnScene(r); }
+    else { r.tx=rnd(40,960); r.ty=rnd(40,660); }
+  } else {
+    r.x+=dx/d*spd; r.y+=dy/d*spd;
+  }
+}
+function distToPin(r){return Math.hypot(PIN.x-r.x,PIN.y-r.y);}
+function etaMinutes(r){
+  // world units -> pseudo minutes based on distance and mode speed
+  const d=distToPin(r);
+  return Math.max(1,Math.round(d/(r.baseSpd*14)));
+}
+
+/* render stations once */
+(function renderStations(){
+  let s="";
+  stations.forEach(st=>{
+    s+='<g transform="translate('+st.x+','+st.y+')">'
+     + '<text class="stxt" text-anchor="middle" y="6" font-size="20">'+st.ic+'</text>'
+     + '<text class="stlbl" text-anchor="middle" y="20" font-size="9" fill="var(--text-faint)">'+st.label+'</text>'
+     + '</g>';
+  });
+  stationG.innerHTML=s;
+})();
+
+/* incident pin */
+function renderPin(){
+  pinG.innerHTML=
+    '<circle cx="'+PIN.x+'" cy="'+PIN.y+'" r="46" fill="url(#pinGlow)"><animate attributeName="r" values="30;52;30" dur="1.8s" repeatCount="indefinite"/></circle>'
+    +'<circle cx="'+PIN.x+'" cy="'+PIN.y+'" r="9" fill="#ef4444" stroke="#fff" stroke-width="2"/>'
+    +'<text x="'+PIN.x+'" y="'+(PIN.y-16)+'" text-anchor="middle" font-size="18">📍</text>';
+}
+renderPin();
+
+/* cluster cells for zoomed-out view */
+function computeClusters(){
+  const cell=250; const map={};
+  resources.forEach(r=>{
+    const cx=Math.floor(r.x/cell), cy=Math.floor(r.y/cell);
+    const k=cx+"_"+cy;
+    if(!map[k])map[k]={n:0,sx:0,sy:0};
+    map[k].n++; map[k].sx+=r.x; map[k].sy+=r.y;
+  });
+  return Object.values(map).map(c=>({n:c.n,x:c.sx/c.n,y:c.sy/c.n}));
+}
+
+/* main map render (called each movement tick) */
+function renderMap(){
+  const detail = zoom>=1.25;             // typed icons + labels when zoomed in
+  const showLabels = zoom>=1.9;
+  if(detail){
+    clusterG.innerHTML="";
+    let s="";
+    resources.forEach(r=>{
+      const col=STATUS_COL[r.status];
+      s+='<g transform="translate('+r.x.toFixed(1)+','+r.y.toFixed(1)+')">'
+       + '<circle r="11" fill="'+col+'" opacity="0.16"/>'
+       + '<circle r="4.5" fill="'+col+'"/>'
+       + '<text text-anchor="middle" y="4" font-size="14">'+r.ic+'</text>'
+       + (showLabels?'<text class="reslabel" text-anchor="middle" y="-11">'+r.collar+(r.status==="on_route"?" · "+Math.ceil(r.etaSec/60)+"m":"")+'</text>':'')
+       + '</g>';
+    });
+    resG.innerHTML=s;
+  } else {
+    // clustered
+    resG.innerHTML="";
+    const clusters=computeClusters();
+    let s="";
+    clusters.forEach(c=>{
+      const rad=Math.min(26,10+c.n*1.6);
+      s+='<g transform="translate('+c.x.toFixed(1)+','+c.y.toFixed(1)+')">'
+       + '<circle r="'+rad+'" fill="rgba(47,107,255,.22)" stroke="var(--accent)" stroke-width="1.5"/>'
+       + '<text text-anchor="middle" y="4" font-size="13" font-weight="700" fill="#fff">'+c.n+'</text>'
+       + '</g>';
+    });
+    clusterG.innerHTML=s;
+  }
+  // routes for on_route assigned units
+  let rs="";
+  resources.filter(r=>r.assigned&&r.status==="on_route").forEach(r=>{
+    rs+='<path class="routeline" d="M'+r.x.toFixed(1)+','+r.y.toFixed(1)+' Q'+((r.x+PIN.x)/2)+','+((r.y+PIN.y)/2-40)+' '+PIN.x+','+PIN.y+'"/>';
+  });
+  routeG.innerHTML=rs;
+}
+
+/* world transform for zoom (scale around pin) */
+function applyZoom(){
+  const s=zoom;
+  const tx=PIN.x-PIN.x*s, ty=PIN.y-PIN.y*s;
+  worldG.setAttribute("transform","translate("+tx.toFixed(1)+","+ty.toFixed(1)+") scale("+s.toFixed(3)+")");
+  $("zBadge").textContent="zoom "+s.toFixed(1)+"×";
+  renderMap();
+}
+$("zoomIn").onclick=()=>{zoom=Math.min(ZMAX,zoom+0.35);applyZoom();};
+$("zoomOut").onclick=()=>{zoom=Math.max(ZMIN,zoom-0.35);applyZoom();};
+$("recentre").onclick=()=>{zoom=1.6;applyZoom();toast("⌖ Recentred on active incident");};
+$("mapstage").addEventListener("wheel",e=>{e.preventDefault();zoom=Math.max(ZMIN,Math.min(ZMAX,zoom-Math.sign(e.deltaY)*0.2));applyZoom();},{passive:false});
+
+/* movement loop */
+setInterval(()=>{ resources.forEach(stepResource); renderMap(); },260);
+
+/* ============================================================
+   RESOURCES PANEL — nearest units, filter, drag-assign
+   ============================================================ */
+let currentRanked=[];
+function refreshUnits(){
+  const filter=$("skillFilter").value;
+  let pool=resources.filter(r=>r.status==="available"&&!r.assigned);
+  if(filter!=="ANY") pool=pool.filter(r=>r.skills.includes(filter));
+  pool.forEach(r=>r.etaSec=etaMinutes(r)*60);
+  pool.sort((a,b)=>a.etaSec-b.etaSec);
+  currentRanked=pool.slice(0,7);
+  $("resCnt").textContent=pool.length+" nearby";
+  renderUnitList();
+}
+function skillChips(r){
+  if(!r.skills.length)return '<span class="chip sm dim">no special skills</span>';
+  return r.skills.map(s=>'<span class="chip sm accent">'+s+'</span>').join("");
+}
+function renderUnitList(){
+  const l=$("unitList"); l.innerHTML="";
+  if(!currentRanked.length){l.innerHTML='<div class="empty-note">No matching available units. Try skill filter = ANY.</div>';return;}
+  currentRanked.forEach(r=>{
+    const el=document.createElement("div");
+    el.className="unit"; el.draggable=true; el.dataset.rid=r.id;
+    el.innerHTML=
+      '<div class="u1">'
+      + '<span class="modeic">'+r.ic+'</span>'
+      + '<span class="collar">'+r.collar+'</span>'
+      + '<span class="eta tnum">'+Math.round(r.etaSec/60)+' min ETA</span>'
+      +'</div>'
+      +'<div class="stbar"><span class="dot" style="background:var(--st-available)"></span>'+r.modeName+' · available</div>'
+      +'<div class="skills">'+skillChips(r)+'</div>';
+    el.addEventListener("dragstart",e=>{e.dataTransfer.setData("text/plain",r.id);e.dataTransfer.effectAllowed="move";});
+    l.appendChild(el);
+  });
+}
+$("skillFilter").addEventListener("change",refreshUnits);
+$("nearestBtn").addEventListener("click",()=>{
+  if(!activeInc){toast("No active incident — press READY first");return;}
+  refreshUnits();
+  if(!currentRanked.length){toast("No trained unit matches the filter");return;}
+  assignResource(currentRanked[0]);
+});
+
+/* drop target = whole map stage */
+const stage=$("mapstage");
+stage.addEventListener("dragover",e=>{e.preventDefault();e.dataTransfer.dropEffect="move";stage.classList.add("dragging-over");});
+stage.addEventListener("dragleave",()=>stage.classList.remove("dragging-over"));
+stage.addEventListener("drop",e=>{
+  e.preventDefault();stage.classList.remove("dragging-over");
+  const rid=+e.dataTransfer.getData("text/plain");
+  const r=resources.find(x=>x.id===rid);
+  if(r)assignResource(r);
+});
+
+function assignResource(r){
+  if(!activeInc){toast("No active incident — press READY first");return;}
+  if(r.assigned)return;
+  r.assigned=true; r.prevStatus=r.status; r.status="on_route";
+  r.etaSec=etaMinutes(r)*60;
+  setTimeline("assigned");
+  setTimeout(()=>{if(activeInc)setTimeline("on route");},600);
+  refreshUnits(); renderAssigned(); renderMap();
+  toast('🚔 <b>'+r.collar+'</b> '+r.ic+' assigned → ON_ROUTE · ETA '+Math.round(r.etaSec/60)+' min');
+}
+function arriveOnScene(r){
+  r.status="on_scene";
+  setTimeline("arrived");
+  renderAssigned(); renderMap();
+  toast('✅ <b>'+r.collar+'</b> ARRIVED on scene');
+}
+let assignedList=(()=>[])();
+function clearAssignments(){
+  resources.forEach(r=>{ if(r.assigned){r.assigned=false;r.status="available";} });
+  renderAssigned();
+}
+function renderAssigned(){
+  const box=$("assignedBox");
+  const assigned=resources.filter(r=>r.assigned);
+  if(!assigned.length){box.innerHTML='<div class="empty-note">No units assigned yet.</div>';return;}
+  box.innerHTML="";
+  assigned.forEach(r=>{
+    const col=STATUS_COL[r.status];
+    const label=r.status==="on_route"?("ON_ROUTE · ETA "+fmtAge(r.etaSec)):"ON_SCENE";
+    const el=document.createElement("div");el.className="unit assigned";
+    el.innerHTML=
+      '<div class="u1"><span class="modeic">'+r.ic+'</span>'
+      +'<span class="collar">'+r.collar+'</span>'
+      +'<span class="eta tnum" data-eta="'+r.id+'" style="color:'+col+'">'+ (r.status==="on_route"?fmtAge(r.etaSec):"arrived") +'</span></div>'
+      +'<div class="stbar"><span class="dot" style="background:'+col+'"></span>'+label+'</div>';
+    box.appendChild(el);
+  });
+  // resolve control appears once at least one arrived
+  if(assigned.some(r=>r.status==="on_scene")){
+    const btn=document.createElement("button");
+    btn.className="btn danger";btn.style.marginTop="8px";btn.textContent="✔ Resolve incident";
+    btn.onclick=resolveIncident;
+    box.appendChild(btn);
+  }
+}
+function resolveIncident(){
+  if(!activeInc)return;
+  setTimeline("resolved");
+  const ref=activeInc.ref;
+  toast('🏁 Incident <b>'+ref+'</b> RESOLVED · units cleared');
+  // clear
+  clearAssignments();
+  incidents=incidents.filter(i=>i.id!==activeInc.id);
+  activeInc=null;
+  $("activePill").innerHTML='Active: <b>— none —</b>';
+  renderBanner(); renderQueue(); refreshUnits();
+  setTimeout(()=>{tlIndex=-1;setTimeline("created");},1500);
+}
+
+/* ETA countdown for assigned on_route units (1s) */
+function tickEta(){
+  resources.filter(r=>r.assigned&&r.status==="on_route").forEach(r=>{
+    r.etaSec=Math.max(0,r.etaSec-1);
+    const el=document.querySelector('[data-eta="'+r.id+'"]');
+    if(el)el.textContent=fmtAge(r.etaSec);
+  });
+}
+
+/* ============================================================
+   WIRE-UP + MASTER TICK
+   ============================================================ */
+$("readyBtn").addEventListener("click",takeNext);
+
+renderQueue();
+refreshUnits();
+applyZoom();     // sets initial transform + first map render
+zoom=1.6;applyZoom();
+
+setInterval(()=>{ tickAges(); tickEta(); },1000);
+scheduleArrival();
+
+// gentle demo hint
+setTimeout(()=>toast("👋 Press <b>READY ▶ take next</b> to command the top incident"),900);
+</script>
+</body>
+</html>

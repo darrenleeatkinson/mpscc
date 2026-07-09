@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPSCC — High-Level Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;600;650;700;750&display=swap">
+<link rel="stylesheet" href="assets/mpscc.css">
+<style>
+  /* ---- page-specific: interactive SVG diagrams ---- */
+  .subttl{color:var(--text-dim);max-width:70ch;margin:-2px 0 20px}
+  .diagram{position:relative;width:100%;border-radius:var(--radius);
+    background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.005));
+    border:1px solid var(--hair);overflow:hidden}
+  .diagram svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+  .diagram .node,.diagram .hub,.diagram .actor{position:absolute;transform:translate(-50%,-50%);z-index:2;
+    width:var(--w,150px);cursor:pointer}
+  .diagram .node .name{font-size:.86rem}
+  .diagram .node .sub{font-size:.68rem;color:var(--text-dim);margin-top:2px;line-height:1.35}
+  .hub{display:grid;place-items:center;text-align:center;border-radius:14px;padding:14px 16px;
+    background:var(--accent-grad);color:#fff;font-weight:700;box-shadow:0 10px 40px -12px rgba(47,107,255,.8);
+    border:1px solid rgba(255,255,255,.25)}
+  .hub small{display:block;font-weight:500;opacity:.9;font-size:.68rem;margin-top:3px}
+  .actor{text-align:center;border-radius:14px;padding:12px 14px;background:var(--panel);
+    border:1px solid var(--hair);transition:all .2s}
+  .actor:hover{border-color:var(--accent);box-shadow:var(--glow);transform:translate(-50%,-50%) scale(1.04)}
+  .actor .ic{font-size:1.5rem;line-height:1} .actor .nm{font-weight:600;font-size:.82rem;margin-top:5px}
+  .actor .rl{font-size:.66rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+  .grp-label{position:absolute;z-index:2;font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--text-faint);transform:translate(-50%,-50%)}
+  .grp-box{position:absolute;z-index:0;border:1px dashed var(--hair);border-radius:14px;
+    background:rgba(255,255,255,.015)}
+  /* detail drawer */
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:390px;max-width:92vw;z-index:80;
+    background:rgba(10,14,26,.92);backdrop-filter:blur(20px);border-left:1px solid var(--hair-strong);
+    box-shadow:-30px 0 80px -30px rgba(0,0,0,.8);transform:translateX(105%);transition:transform .32s cubic-bezier(.4,0,.2,1);
+    padding:22px;overflow-y:auto}
+  .drawer.open{transform:none}
+  .drawer .x{position:absolute;top:16px;right:18px;cursor:pointer;font-size:1.3rem;color:var(--text-dim);
+    width:32px;height:32px;display:grid;place-items:center;border-radius:8px;border:1px solid var(--hair)}
+  .drawer .x:hover{color:#fff;border-color:var(--hair-strong)}
+  .drawer h3{font-size:1.15rem;padding-right:40px}
+  .drawer .tag{font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent-2);font-weight:650}
+  .drawer ul{margin:.4em 0;padding-left:18px;color:var(--text-dim);font-size:.88rem}
+  .drawer ul li{margin:5px 0}
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:79;opacity:0;pointer-events:none;transition:opacity .3s}
+  .backdrop.open{opacity:1;pointer-events:auto}
+  /* journey flow */
+  .journey{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:26px 6px 10px;position:relative}
+  .jstage{flex:0 0 auto;min-width:150px;position:relative;padding:0 6px}
+  .jstage .card{border:1px solid var(--hair);border-radius:12px;padding:12px 13px;background:var(--panel);height:100%;
+    transition:all .25s}
+  .jstage.lit .card{border-color:var(--accent);box-shadow:var(--glow);transform:translateY(-4px)}
+  .jstage .st{font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--text-faint)}
+  .jstage .tt{font-weight:650;font-size:.9rem;margin:4px 0}
+  .jstage .ds{font-size:.72rem;color:var(--text-dim);line-height:1.4}
+  .jstage .arr{position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:var(--accent-2);font-size:1.1rem;z-index:3}
+  .jtoken{position:absolute;top:-6px;left:0;width:34px;height:34px;border-radius:50%;z-index:5;
+    background:var(--accent-grad);box-shadow:0 0 0 6px rgba(47,107,255,.18),0 8px 24px -6px rgba(47,107,255,.9);
+    display:grid;place-items:center;font-size:15px;transition:left .9s cubic-bezier(.5,0,.2,1)}
+  .jctrl{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  /* tech cards */
+  .techgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:900px){.techgrid{grid-template-columns:1fr}}
+  .techcard h4{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .techcard .ic{font-size:1.15rem}
+  .techcard p{font-size:.82rem;margin:.2em 0 .7em}
+  .packet{fill:var(--accent-2);filter:drop-shadow(0 0 4px var(--accent-2))}
+  .packet.p2{fill:#a855f7;filter:drop-shadow(0 0 4px #a855f7)}
+  .packet.p3{fill:#22c55e;filter:drop-shadow(0 0 4px #22c55e)}
+  .hint{font-size:.75rem;color:var(--text-faint);display:inline-flex;align-items:center;gap:6px;margin-bottom:14px}
+  .hint .k{width:7px;height:7px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 8px var(--accent-2)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="badge">🛡</span>
+    <span>MPSCC<small>High-Level Design</small></span>
+  </div>
+  <span class="pill">Architecture · Executive View</span>
+  <span class="clock" id="clock">--:--:--</span>
+  <a href="index.html" class="btn" style="margin-left:14px">← Design Portal</a>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="context">System Context</div>
+  <div class="tab" data-tab="topology">Container Topology</div>
+  <div class="tab" data-tab="journey">End-to-End Journey</div>
+  <div class="tab" data-tab="stack">Tech Stack</div>
+  <div class="tab" data-tab="numbers">The Numbers &amp; NFRs</div>
+</div>
+
+<div class="wrap" style="padding-top:26px;padding-bottom:60px">
+
+<!-- ============ TAB 1 : SYSTEM CONTEXT ============ -->
+<section class="tabpane active" id="context">
+  <h1>System Context</h1>
+  <p class="subttl">The MPSCC platform sits at the centre of Metropolitan Police command &amp; control. Emergency calls hand over from British Telecom, three operator personas act on incidents, and everything is observed by Dynatrace. Click any actor to inspect its relationship.</p>
+  <div class="hint"><span class="k"></span> Live data packets flow along each link · click nodes for detail</div>
+  <div class="diagram" id="diag-ctx" style="height:560px">
+    <svg class="wires"></svg>
+    <div class="hub actor" id="c-hub" style="left:50%;top:50%;--w:210px" data-info="platform">
+      <div class="ic">🛡</div><div class="nm" style="font-size:.98rem">MPSCC Platform</div>
+      <small>Command &amp; Control · 14 services</small>
+    </div>
+    <div class="actor" id="c-bt"       style="left:16%;top:16%"  data-info="bt"><div class="ic">☎️</div><div class="nm">British Telecom</div><div class="rl">999 hand-over</div></div>
+    <div class="actor" id="c-caller"   style="left:16%;top:50%"  data-info="caller"><div class="ic">🆘</div><div class="nm">999 Caller</div><div class="rl">Public</div></div>
+    <div class="actor" id="c-osm"      style="left:16%;top:84%"  data-info="osm"><div class="ic">🗺️</div><div class="nm">OpenFreeMap</div><div class="rl">Vector tiles / OSM</div></div>
+    <div class="actor" id="c-resp"     style="left:84%;top:16%"  data-info="responder"><div class="ic">🎧</div><div class="nm">Responder</div><div class="rl">Persona 1</div></div>
+    <div class="actor" id="c-disp"     style="left:88%;top:50%"  data-info="dispatcher"><div class="ic">📡</div><div class="nm">Dispatcher</div><div class="rl">Persona 2</div></div>
+    <div class="actor" id="c-plan"     style="left:84%;top:84%"  data-info="planner"><div class="ic">📋</div><div class="nm">Planner</div><div class="rl">Persona 3</div></div>
+    <div class="actor" id="c-dt"       style="left:50%;top:9%"   data-info="dynatrace"><div class="ic">📊</div><div class="nm">Dynatrace</div><div class="rl">Observability</div></div>
+  </div>
+</section>
+
+<!-- ============ TAB 2 : CONTAINER TOPOLOGY ============ -->
+<section class="tabpane" id="topology">
+  <h1>Container Topology</h1>
+  <p class="subttl">Browser → API Gateway → logical service groups → the Kafka backbone → polyglot data stores. This mirrors the topology in system-architecture §2.1. Click any container for its responsibility and tech.</p>
+  <div class="hint"><span class="k"></span> Solid = sync REST · dashed = Kafka events · click a box for detail</div>
+  <div class="diagram" id="diag-topo" style="height:820px">
+    <svg class="wires"></svg>
+
+    <div class="grp-box" id="gb-intake"></div>
+    <div class="grp-box" id="gb-data"></div>
+
+    <div class="node" id="t-browser" style="left:50%;top:6%;--w:280px" data-info="browser">
+      <div class="kind">Client</div><div class="name">Browser</div>
+      <div class="sub">React 18 · MapLibre GL · TypeScript · STOMP/WSS</div>
+    </div>
+    <div class="node" id="t-gw" style="left:50%;top:19%;--w:300px" data-info="gateway">
+      <div class="kind">Edge</div><div class="name">API Gateway</div><span class="port">:8080</span>
+      <div class="sub">Spring Cloud Gateway · JWT · CORS · rate-limit · WS proxy</div>
+    </div>
+
+    <!-- service row -->
+    <div class="node" id="t-auth"    style="left:12%;top:37%;--w:132px" data-info="auth"><div class="kind">Intake grp</div><div class="name">auth-service</div><span class="port">:8081</span></div>
+    <div class="node" id="t-intake"  style="left:29%;top:37%;--w:132px" data-info="intake"><div class="kind">Intake grp</div><div class="name">call-intake</div><span class="port">:8082</span></div>
+    <div class="node" id="t-incident"style="left:46%;top:37%;--w:132px" data-info="incident"><div class="kind">Dispatch grp</div><div class="name">incident-svc</div><span class="port">:8083</span></div>
+    <div class="node" id="t-dispatch"style="left:63%;top:37%;--w:132px" data-info="dispatch"><div class="kind">Dispatch grp</div><div class="name">dispatch-svc</div><span class="port">:8084</span></div>
+    <div class="node" id="t-resource"style="left:80%;top:33%;--w:132px" data-info="resource"><div class="kind">Resource grp</div><div class="name">resource-svc</div><span class="port">:8085</span></div>
+    <div class="node" id="t-geo"     style="left:80%;top:44%;--w:132px" data-info="geo"><div class="kind">Geo grp</div><div class="name">geo-query</div><span class="port">:8086</span></div>
+    <div class="node" id="t-shift"   style="left:12%;top:50%;--w:132px" data-info="shift"><div class="kind">Planning grp</div><div class="name">shift-planning</div><span class="port">:8087</span></div>
+    <div class="node" id="t-route"   style="left:29%;top:50%;--w:132px" data-info="route"><div class="kind">Geo grp</div><div class="name">routing-svc</div><span class="port">:8088</span></div>
+
+    <!-- kafka backbone -->
+    <div class="hub" id="t-kafka" style="position:absolute;left:50%;top:63%;transform:translate(-50%,-50%);--w:80%;width:78%;cursor:pointer;
+         background:linear-gradient(135deg,#111827,#1a2338);border:1px solid var(--hair-strong)" data-info="kafka">
+      <div style="font-size:.95rem">⛓ APACHE KAFKA — event backbone</div>
+      <small class="mono">calls.inbound · incidents.created · incidents.updated · dispatch.assignments · locations.updates · locations.deltas</small>
+    </div>
+
+    <!-- simulators -->
+    <div class="node sim" id="t-callsim" style="left:16%;top:76%;--w:150px" data-info="callsim"><div class="kind">Simulator</div><div class="name">call / crime sim</div></div>
+    <div class="node sim" id="t-ingest"  style="left:50%;top:76%;--w:150px" data-info="ingest"><div class="kind">Consumer</div><div class="name">location-ingest</div></div>
+    <div class="node sim" id="t-locsim"  style="left:84%;top:76%;--w:150px" data-info="locsim"><div class="kind">Simulator</div><div class="name">location-sim</div></div>
+
+    <!-- data stores -->
+    <div class="node data" id="t-pg"     style="left:14%;top:92%;--w:150px" data-info="postgres"><div class="kind">Store</div><div class="name">PostgreSQL 16</div><div class="sub">+ PostGIS</div></div>
+    <div class="node data" id="t-redis"  style="left:39%;top:92%;--w:130px" data-info="redis"><div class="kind">Store</div><div class="name">Redis 7 GEO</div><div class="sub">live pos + pub/sub</div></div>
+    <div class="node data" id="t-ts"     style="left:62%;top:92%;--w:150px" data-info="timescale"><div class="kind">Store</div><div class="name">TimescaleDB</div><div class="sub">location_history</div></div>
+    <div class="node data" id="t-osrm"   style="left:85%;top:92%;--w:130px" data-info="osrm"><div class="kind">Store</div><div class="name">OSRM</div><div class="sub">London OSM routing</div></div>
+  </div>
+</section>
+
+<!-- ============ TAB 3 : END-TO-END JOURNEY ============ -->
+<section class="tabpane" id="journey">
+  <h1>End-to-End Journey</h1>
+  <p class="subttl">Follow one emergency from British Telecom hand-over to resolution. The token travels each stage; blue stages are synchronous, dashed stages ride the Kafka backbone.</p>
+  <div class="journey" id="journeyFlow">
+    <div class="jtoken" id="jtoken">🆘</div>
+    <div class="jstage" data-i="0"><div class="card"><div class="st">Hand-over</div><div class="tt">BT 999</div><div class="ds">British Telecom passes caller + line to intake.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="1"><div class="card"><div class="st">Kafka</div><div class="tt">Intake queue</div><div class="ds"><span class="mono">calls.inbound</span> — call-simulator feed builds the queue.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="2"><div class="card"><div class="st">Persona 1</div><div class="tt">Responder answers</div><div class="ds">Pulls next call, opens crime stream (SSE).</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="3"><div class="card"><div class="st">Enrich</div><div class="tt">Simulators enrich</div><div class="ds">crime-sim streams narrative, priority, weapons.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="4"><div class="card"><div class="st">Persist</div><div class="tt">Incident saved</div><div class="ds">Ref <span class="mono">DDMMYY-NNNNNNN</span> → <span class="mono">incidents.created</span>.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="5"><div class="card"><div class="st">Kafka</div><div class="tt">Dispatch queue</div><div class="ds">Prioritised, aging projection for dispatchers.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="6"><div class="card"><div class="st">Persona 2</div><div class="tt">READY / take-next</div><div class="ds">Pops highest-priority oldest WAITING → ACTIVE.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="7"><div class="card"><div class="st">Assign</div><div class="tt">Assign resource</div><div class="ds">Nearest trained officer + vehicle, OSRM ETA.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="8"><div class="card"><div class="st">Move</div><div class="tt">ON_ROUTE</div><div class="ds">Officer route replaced; live on the map.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="9"><div class="card"><div class="st">Scene</div><div class="tt">ARRIVED</div><div class="ds">Auto-confirm at route end; officer ON_SCENE.</div></div><span class="arr">▸</span></div>
+    <div class="jstage" data-i="10"><div class="card"><div class="st">Close</div><div class="tt">Resolved</div><div class="ds">Assignment CLEARED, incident RESOLVED.</div></div></div>
+  </div>
+  <div class="jctrl">
+    <button class="btn primary" id="jplay">▶ Play journey</button>
+    <button class="btn" id="jstep">Step ▸</button>
+    <button class="btn" id="jreset">↺ Reset</button>
+    <span class="chip" id="jstatus">Stage 0 — BT hand-over</span>
+  </div>
+</section>
+
+<!-- ============ TAB 4 : TECH STACK ============ -->
+<section class="tabpane" id="stack">
+  <h1>Tech Stack</h1>
+  <p class="subttl">Every technology choice, with the one-line rationale from system-architecture §2.2.</p>
+  <div class="techgrid" id="techgrid"></div>
+</section>
+
+<!-- ============ TAB 5 : NUMBERS & NFRs ============ -->
+<section class="tabpane" id="numbers">
+  <h1>The Numbers &amp; NFRs</h1>
+  <p class="subttl">The operational scale the platform is designed for, and the non-functional targets it must hit.</p>
+  <div class="grid grid-4" id="statgrid" style="margin-bottom:22px"></div>
+  <div class="panel">
+    <div class="panel-title">Non-functional targets — §2.5</div>
+    <table>
+      <thead><tr><th>NFR</th><th>Target</th></tr></thead>
+      <tbody>
+        <tr><td>Location ingest</td><td class="mono">3,000 msg/sec sustained · 20,000 burst</td></tr>
+        <tr><td>Redis GEO write</td><td class="mono">&lt; 1 ms p99</td></tr>
+        <tr><td>Viewport query (visible resources)</td><td class="mono">&lt; 50 ms p95 end-to-end</td></tr>
+        <tr><td>Incident create → dispatch queue</td><td class="mono">&lt; 1 s</td></tr>
+        <tr><td>Map interaction (pan / zoom)</td><td class="mono">60 fps · GPU-rendered</td></tr>
+        <tr><td>Point-in-time location history query</td><td class="mono">&lt; 500 ms · single officer/day</td></tr>
+        <tr><td>Nearest-trained-resource</td><td class="mono">&lt; 100 ms p95</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <div class="panel-title">Fleet composition — ~10,390 vehicles</div>
+    <div class="legend" style="gap:22px">
+      <span><span class="dot" style="background:var(--accent)"></span>8,000 CAR</span>
+      <span><span class="dot" style="background:var(--accent-2)"></span>1,000 VAN</span>
+      <span><span class="dot" style="background:#a855f7"></span>500 MOTORBIKE</span>
+      <span><span class="dot" style="background:#22c55e"></span>~200 SCOOTER</span>
+      <span><span class="dot" style="background:#f59e0b"></span>600 PUSHBIKE</span>
+      <span><span class="dot" style="background:#ef4444"></span>~60 DOG_CAR</span>
+      <span><span class="dot" style="background:#eab308"></span>~30 HORSE</span>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<!-- detail drawer -->
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="x" id="drawerX">✕</div>
+  <div id="drawerBody"></div>
+</aside>
+
+<div class="footer">MPSCC — Metropolitan Police Service Command &amp; Control · High-Level Design · glassmorphism control-room design system</div>
+
+<script>
+/* ---------- clock ---------- */
+function tick(){
+  const t = new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
+  document.getElementById('clock').textContent = t + ' Europe/London';
+}
+tick(); setInterval(tick,1000);
+
+/* ---------- tabs ---------- */
+const tabs=document.getElementById('tabs');
+tabs.addEventListener('click',e=>{
+  const t=e.target.closest('.tab'); if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tabpane').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  const pane=document.getElementById(t.dataset.tab);
+  pane.classList.add('active');
+  requestAnimationFrame(()=>{redrawAll();});
+});
+
+/* ---------- SVG wiring helper ---------- */
+const SVGNS='http://www.w3.org/2000/svg';
+function centre(el,host){const a=el.getBoundingClientRect(),r=host.getBoundingClientRect();
+  return {x:a.left+a.width/2-r.left, y:a.top+a.height/2-r.top};}
+function wire(diagId,conns){
+  const d=document.getElementById(diagId); if(!d)return;
+  const svg=d.querySelector('svg.wires');
+  const draw=()=>{
+    const r=d.getBoundingClientRect();
+    svg.setAttribute('viewBox',`0 0 ${r.width} ${r.height}`);
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    // arrow marker
+    const defs=document.createElementNS(SVGNS,'defs');
+    defs.innerHTML='<marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="rgba(154,166,189,.7)"/></marker>';
+    svg.appendChild(defs);
+    conns.forEach((c,i)=>{
+      const A=document.getElementById(c.from),B=document.getElementById(c.to);
+      if(!A||!B)return;
+      const a=centre(A,d),b=centre(B,d);
+      const path=document.createElementNS(SVGNS,'path');
+      let dd;
+      if(c.curve){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2+ (c.curve||0);
+        dd=`M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}`;}
+      else dd=`M${a.x},${a.y} L${b.x},${b.y}`;
+      path.setAttribute('d',dd);
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke',c.color||'rgba(154,166,189,.35)');
+      path.setAttribute('stroke-width',c.w||1.6);
+      if(c.dash)path.setAttribute('stroke-dasharray','6 6');
+      if(c.arrow!==false)path.setAttribute('marker-end','url(#ah)');
+      svg.appendChild(path);
+      // animated packet
+      if(c.flow!==false){
+        const pk=document.createElementNS(SVGNS,'circle');
+        pk.setAttribute('r',c.r||3.2);
+        pk.setAttribute('class','packet'+(c.pk?(' '+c.pk):''));
+        const mo=document.createElementNS(SVGNS,'animateMotion');
+        mo.setAttribute('dur',(c.dur|| (2.2+ (i%5)*0.35))+'s');
+        mo.setAttribute('repeatCount','indefinite');
+        mo.setAttribute('path',dd);
+        if(c.rev)mo.setAttribute('keyPoints','1;0'),mo.setAttribute('keyTimes','0;1'),mo.setAttribute('calcMode','linear');
+        pk.appendChild(mo);
+        svg.appendChild(pk);
+      }
+    });
+  };
+  d._draw=draw; draw();
+}
+
+/* group boxes for topology (positioned relative to diagram) */
+function layoutGroups(){
+  const d=document.getElementById('diag-topo'); if(!d)return;
+  const setBox=(id,x,y,w,h)=>{const e=document.getElementById(id);if(!e)return;
+    Object.assign(e.style,{left:x,top:y,width:w,height:h});};
+  // rough dashed bounds around service row + data row
+}
+
+/* ---------- diagram definitions ---------- */
+function drawContext(){
+  wire('diag-ctx',[
+    {from:'c-bt',to:'c-hub',color:'rgba(34,211,238,.5)',w:1.8},
+    {from:'c-caller',to:'c-bt',color:'rgba(154,166,189,.4)',dash:true,dur:2.6},
+    {from:'c-osm',to:'c-hub',color:'rgba(168,85,247,.5)',pk:'p2',curve:20},
+    {from:'c-hub',to:'c-resp',color:'rgba(47,107,255,.5)'},
+    {from:'c-hub',to:'c-disp',color:'rgba(47,107,255,.5)'},
+    {from:'c-hub',to:'c-plan',color:'rgba(47,107,255,.5)'},
+    {from:'c-hub',to:'c-dt',color:'rgba(34,197,94,.55)',pk:'p3',w:1.8,arrow:true},
+  ]);
+}
+function drawTopo(){
+  const inf='rgba(47,107,255,.45)', ev='rgba(154,166,189,.4)';
+  wire('diag-topo',[
+    {from:'t-browser',to:'t-gw',color:inf,w:2},
+    {from:'t-gw',to:'t-auth',color:inf},{from:'t-gw',to:'t-intake',color:inf},
+    {from:'t-gw',to:'t-incident',color:inf},{from:'t-gw',to:'t-dispatch',color:inf},
+    {from:'t-gw',to:'t-resource',color:inf},{from:'t-gw',to:'t-geo',color:inf},
+    {from:'t-gw',to:'t-shift',color:inf},{from:'t-gw',to:'t-route',color:inf},
+    // services -> kafka (events)
+    {from:'t-intake',to:'t-kafka',color:ev,dash:true,pk:'p2'},
+    {from:'t-incident',to:'t-kafka',color:ev,dash:true,pk:'p2'},
+    {from:'t-dispatch',to:'t-kafka',color:ev,dash:true,pk:'p2'},
+    {from:'t-resource',to:'t-kafka',color:ev,dash:true,pk:'p2',arrow:true},
+    // kafka -> simulators/consumers
+    {from:'t-callsim',to:'t-kafka',color:'rgba(34,211,238,.45)',dash:true,rev:true},
+    {from:'t-kafka',to:'t-ingest',color:'rgba(34,211,238,.5)',dash:true,w:1.8},
+    {from:'t-locsim',to:'t-kafka',color:'rgba(34,211,238,.45)',dash:true},
+    // stores
+    {from:'t-auth',to:'t-pg',color:'rgba(168,85,247,.4)',curve:30},
+    {from:'t-callsim',to:'t-pg',color:'rgba(168,85,247,.4)'},
+    {from:'t-ingest',to:'t-redis',color:'rgba(34,197,94,.5)',pk:'p3'},
+    {from:'t-ingest',to:'t-ts',color:'rgba(168,85,247,.5)',pk:'p2'},
+    {from:'t-geo',to:'t-redis',color:'rgba(34,197,94,.45)',curve:-30},
+    {from:'t-locsim',to:'t-osrm',color:'rgba(168,85,247,.4)'},
+    {from:'t-route',to:'t-osrm',color:'rgba(168,85,247,.4)',curve:40},
+  ]);
+}
+function redrawAll(){
+  ['diag-ctx','diag-topo'].forEach(id=>{const d=document.getElementById(id);if(d&&d._draw)d._draw();});
+}
+drawContext(); drawTopo();
+window.addEventListener('resize',()=>{redrawAll();});
+window.addEventListener('load',()=>{redrawAll();});
+
+/* ---------- node detail drawer ---------- */
+const INFO={
+  platform:{tag:'Core',title:'MPSCC Platform',body:`
+    <p>A distributed command &amp; control platform for the Metropolitan Police: 14 Spring Boot services plus a React front end, wired over a Kafka backbone and polyglot data stores.</p>
+    <ul><li>Takes 999 calls, assesses &amp; prioritises incidents</li>
+    <li>Dispatches the nearest trained resource</li>
+    <li>Tracks ~15k on-shift officers live on the map</li></ul>`},
+  bt:{tag:'External actor',title:'British Telecom',body:`<p>The national 999 answering point hands the caller and line detail over to MPSCC intake. In the demo this is the source that seeds the <span class="mono">calls.inbound</span> stream.</p>`},
+  caller:{tag:'External actor',title:'999 Caller',body:`<p>A member of the public in distress. Location arrives as landline address or a mobile triangulation fix with an accuracy radius.</p>`},
+  osm:{tag:'External service',title:'OpenFreeMap / OpenStreetMap',body:`<p>Free vector map tiles (no key) rendered by MapLibre GL on the GPU. OSM data also feeds the OSRM routing engine for realistic London streets.</p>`},
+  responder:{tag:'Persona 1',title:'Responder',body:`<p>Answers the call, listens to the streamed crime assessment, confirms the incident and generates its reference. Backed by <span class="mono">call-intake-service</span>.</p>`},
+  dispatcher:{tag:'Persona 2',title:'Dispatcher',body:`<p>Works the prioritised aging queue: goes READY, takes the next incident, and assigns the nearest suitable resource. Backed by <span class="mono">dispatch-service</span> + <span class="mono">geo-query-service</span>.</p>`},
+  planner:{tag:'Persona 3',title:'Planner',body:`<p>Generates rosters and balances stations via the rules engine in <span class="mono">shift-planning-service</span>. Decides who is on-shift and therefore who moves on the map.</p>`},
+  dynatrace:{tag:'Observability',title:'Dynatrace',body:`<p>OneAgent auto-instruments every JVM, the Postgres/Timescale JDBC calls, and all Kafka producers/consumers. The deploy workflow posts a <span class="mono">CUSTOM_DEPLOYMENT</span> event per changed service. Producing a rich distributed-trace surface is a primary reason the platform exists.</p>`},
+  /* topology */
+  browser:{tag:'Client',title:'Browser',body:`<p>React 18 + TypeScript + Vite + Tailwind, MapLibre GL for GPU map rendering. Talks HTTPS for REST and STOMP-over-WSS for real-time viewport subscriptions.</p>`},
+  gateway:{tag:'Edge · :8080',title:'API Gateway',body:`<p>Spring Cloud Gateway. Single entry point.</p><ul><li>Validates JWTs minted by auth-service</li><li>CORS + rate-limiting</li><li>Routes REST and proxies WebSocket traffic</li></ul>`},
+  auth:{tag:'Service · :8081',title:'auth-service',body:`<p>Users, roles, groups, login and JWT issuance. Owns <span class="mono">users, roles, groups</span>. RBAC: RESPONDER, DISPATCHER, PLANNER, ADMIN.</p>`},
+  intake:{tag:'Service · :8082',title:'call-intake-service',body:`<p>Responder backend. Intake queue API, incident creation, reference generation. Publishes <span class="mono">incidents.created</span>; write path for <span class="mono">incidents</span>.</p>`},
+  incident:{tag:'Service · :8083',title:'incident-service',body:`<p>Incident read model + dispatch-queue projection + status transitions. Owns <span class="mono">incidents, incident_assignments</span>. Subscribes to created/assignments events.</p>`},
+  dispatch:{tag:'Service · :8084',title:'dispatch-service',body:`<p>Dispatcher backend. READY / take-next, assignment orchestration, ON_ROUTE / ARRIVED. Owns <span class="mono">incident_assignments</span>.</p>`},
+  resource:{tag:'Service · :8085',title:'resource-service',body:`<p>Officers, vehicles, skills, stations master data. Owns <span class="mono">officers, vehicles, skills, stations</span>.</p>`},
+  geo:{tag:'Service · :8086',title:'geo-query-service',body:`<p>The map's data source: viewport queries, nearest-trained-resource, clustering. Reads Redis GEO + PostGIS; publishes viewport-scoped deltas to the WS gateway.</p>`},
+  shift:{tag:'Service · :8087',title:'shift-planning-service',body:`<p>Rules-engine roster generation and station balancing. Owns <span class="mono">officer_shifts, shift_patterns</span>.</p>`},
+  route:{tag:'Service · :8088',title:'routing-service',body:`<p>Thin wrapper over OSRM — routes, ETAs, snap-to-road. Used by the movement simulator, assignment ETAs and the dispatcher's route overlay.</p>`},
+  kafka:{tag:'Backbone',title:'Apache Kafka',body:`<p>Two workloads share it cleanly:</p><ul><li><b>Event stream</b> — calls, incidents, assignments: low volume, durable, replayable audit log</li><li><b>Telemetry firehose</b> — <span class="mono">locations.updates</span> up to 3k/sec, partitioned by officerId, short retention</li></ul>`},
+  callsim:{tag:'Simulator',title:'call- / crime-simulator',body:`<p>call-simulator emits Poisson-timed 999 calls from M25 postcodes (<span class="mono">calls.inbound</span>). crime-simulator streams narrative + assessed priority per call to the responder.</p>`},
+  ingest:{tag:'Consumer',title:'location-ingest-service',body:`<p>Consumes <span class="mono">locations.updates</span>, writes Redis GEO + hash (current), batches inserts to TimescaleDB (history), emits <span class="mono">locations.deltas</span>. Owns <span class="mono">location_history</span>.</p>`},
+  locsim:{tag:'Simulator',title:'location-simulator-service',body:`<p>Moves on-shift officers along OSRM routes at mode-realistic speeds; ticks every 5 s and emits <span class="mono">LocationUpdate</span> events — the source of the 3k/sec firehose.</p>`},
+  postgres:{tag:'Store',title:'PostgreSQL 16 + PostGIS',body:`<p>One relational store for master + operational data. PostGIS answers "incidents within map bounds" (ST_MakeEnvelope + GiST) and "nearest station" (ST_DWithin, KNN). Live officer positions do NOT live here.</p>`},
+  redis:{tag:'Store',title:'Redis 7 (GEO)',body:`<p>Single source of truth for where every on-shift officer is right now. <span class="mono">GEOADD officers:live</span> per update; <span class="mono">GEOSEARCH … BYBOX</span> answers viewport/nearest in sub-ms. Per-tile pub/sub fans deltas to the WS gateway.</p>`},
+  timescale:{tag:'Store',title:'TimescaleDB',body:`<p>Append-only <span class="mono">location_history</span> hypertable, partitioned by time. Cheap high-rate inserts, native compression (10–20×) on old chunks, and time_bucket queries for point-in-time + full-journey audit.</p>`},
+  osrm:{tag:'Store',title:'OSRM',body:`<p>Self-hosted routing engine pre-processed with a Greater London OSM extract. Returns route geometries for car/bike/foot so simulated officers follow real streets.</p>`},
+};
+const drawer=document.getElementById('drawer'),backdrop=document.getElementById('backdrop'),body=document.getElementById('drawerBody');
+function openInfo(key){const d=INFO[key];if(!d)return;
+  body.innerHTML=`<div class="tag">${d.tag}</div><h3>${d.title}</h3>${d.body}`;
+  drawer.classList.add('open');backdrop.classList.add('open');}
+function closeInfo(){drawer.classList.remove('open');backdrop.classList.remove('open');}
+document.getElementById('drawerX').onclick=closeInfo;
+backdrop.onclick=closeInfo;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeInfo();});
+document.querySelectorAll('[data-info]').forEach(n=>n.addEventListener('click',()=>openInfo(n.dataset.info)));
+
+/* ---------- journey animation ---------- */
+const stages=[...document.querySelectorAll('#journeyFlow .jstage')];
+const token=document.getElementById('jtoken');
+const jstatus=document.getElementById('jstatus');
+const emoji=['🆘','📨','🎧','📝','💾','📋','✅','🚔','🛣️','📍','🏁'];
+let jI=-1, jTimer=null;
+function goStage(i){
+  stages.forEach(s=>s.classList.remove('lit'));
+  if(i<0){token.style.left='0px';jstatus.textContent='Stage 0 — BT hand-over';return;}
+  const s=stages[i];s.classList.add('lit');
+  const flow=document.getElementById('journeyFlow');
+  const r=s.getBoundingClientRect(),fr=flow.getBoundingClientRect();
+  token.style.left=(r.left-fr.left+flow.scrollLeft+r.width/2-17)+'px';
+  token.textContent=emoji[i]||'🆘';
+  s.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
+  jstatus.textContent=`Stage ${i} — ${s.querySelector('.tt').textContent}`;
+}
+document.getElementById('jstep').onclick=()=>{jI=(jI+1)%stages.length;goStage(jI);};
+document.getElementById('jreset').onclick=()=>{clearInterval(jTimer);jTimer=null;jI=-1;goStage(-1);document.getElementById('jplay').textContent='▶ Play journey';};
+document.getElementById('jplay').onclick=function(){
+  if(jTimer){clearInterval(jTimer);jTimer=null;this.textContent='▶ Play journey';return;}
+  this.textContent='⏸ Pause';
+  jTimer=setInterval(()=>{jI++;if(jI>=stages.length){jI=stages.length-1;goStage(jI);clearInterval(jTimer);jTimer=null;document.getElementById('jplay').textContent='▶ Play journey';return;}goStage(jI);},1100);
+};
+
+/* ---------- tech stack cards ---------- */
+const TECH=[
+  {ic:'☕',n:'Java 21 + Spring Boot 3.3',c:'Backend',r:'Matches the workspace convention, gives free OneAgent JVM instrumentation; one parent pom.xml with services/* modules.'},
+  {ic:'⛓',n:'Apache Kafka',c:'Messaging',r:'One backbone for two workloads: durable replayable event log AND the 3k/sec location firehose partitioned by officer-id.'},
+  {ic:'🐘',n:'PostgreSQL 16 + PostGIS',c:'Transactional store',r:'One relational store for master/operational data; PostGIS for "within bounds" and "nearest station" spatial queries.'},
+  {ic:'⚡',n:'Redis 7 (GEO)',c:'Live state',r:'Sub-ms source of truth for current officer positions; GEOSEARCH answers viewport/nearest out of the box, shared across containers.'},
+  {ic:'📈',n:'TimescaleDB',c:'History',r:'Append-only hypertable for cheap high-rate inserts, native compression, and SQL point-in-time + journey audit forever.'},
+  {ic:'🛣️',n:'OSRM (self-hosted)',c:'Routing',r:'Greater-London OSM extract returns car/bike/foot geometries so simulated officers follow real streets, not straight lines.'},
+  {ic:'🗺️',n:'MapLibre GL + OpenFreeMap',c:'Map rendering',r:'GPU vector-tile rendering: smooth zoom/rotation and tens of thousands of symbols with zoom-dependent styling. Free tiles, no key.'},
+  {ic:'⚛️',n:'React 18 + TS + Vite + Tailwind',c:'Frontend',r:'Slick componentised UI, fast HMR, glassmorphism design language; real-time via STOMP over WebSocket with viewport subscriptions.'},
+  {ic:'🔐',n:'Spring Security + JWT',c:'AuthN/Z',r:'Self-contained RBAC (RESPONDER, DISPATCHER, PLANNER, ADMIN); JWT minted by auth-service, validated at the gateway. Keycloak optional later.'},
+  {ic:'🐳',n:'Docker Compose · Hostinger',c:'Deployment',r:'Single docker-compose.yml on the Hostinger box; GitHub Actions targets changed modules for docker compose up --build -d.'},
+  {ic:'📊',n:'Dynatrace OneAgent',c:'Observability',r:'Auto-instruments every JVM, JDBC and Kafka client; posts CUSTOM_DEPLOYMENT events for release correlation. No manual OpenTelemetry.'},
+  {ic:'🌐',n:'STOMP over WebSocket',c:'Real-time',r:'Viewport subscriptions stream only what is visible — the single most important scalability lever for the map.'},
+];
+document.getElementById('techgrid').innerHTML=TECH.map(t=>`
+  <div class="panel hover techcard">
+    <h4><span class="ic">${t.ic}</span>${t.n}</h4>
+    <span class="chip accent">${t.c}</span>
+    <p style="margin-top:10px">${t.r}</p>
+  </div>`).join('');
+
+/* ---------- stats ---------- */
+const STATS=[
+  {n:'20k',l:'999 calls / day'},{n:'40,000',l:'officers'},{n:'~15k',l:'on-shift'},
+  {n:'~3k/s',l:'location updates'},{n:'110',l:'stations'},{n:'3',l:'command centres'},
+  {n:'~10,390',l:'vehicles'},{n:'6,000',l:'firearms officers'},
+];
+document.getElementById('statgrid').innerHTML=STATS.map(s=>`
+  <div class="panel"><div class="stat"><span class="n">${s.n}</span><span class="l">${s.l}</span></div></div>`).join('');
+</script>
+</body>
+</html>

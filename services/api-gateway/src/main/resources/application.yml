@@ -1,0 +1,31 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns:
+              - "*"
+            allowedMethods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+            allowedHeaders: ["*"]
+      routes:
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URI:http://auth-service:8081}
+          predicates:
+            - Path=/api/auth/**
+mpscc:
+  jwt:
+    secret: ${JWT_SECRET:change_me_dev_secret_at_least_64_bytes_long_padding_padding_padding}
+  # paths that bypass JWT enforcement
+  public-paths: /api/auth/,/actuator/
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

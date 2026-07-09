@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPSCC — Low-Level Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;600;650;700;750&display=swap">
+<link rel="stylesheet" href="assets/mpscc.css">
+<style>
+  .subttl{color:var(--text-dim);max-width:74ch;margin:-2px 0 20px}
+  .hint{font-size:.75rem;color:var(--text-faint);display:inline-flex;align-items:center;gap:6px;margin-bottom:14px}
+  .hint .k{width:7px;height:7px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 8px var(--accent-2)}
+  /* service cards */
+  .svcgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  @media(max-width:900px){.svcgrid{grid-template-columns:1fr}}
+  .svc h3{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .svc .port{font-family:var(--mono);font-size:.75rem;color:var(--accent-2);margin-left:auto}
+  .svc .resp{font-size:.85rem;color:var(--text-dim);margin:.2em 0 .7em}
+  .svc .owns{font-size:.74rem;margin-bottom:10px}
+  .svc .owns b{color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;font-size:.66rem}
+  .ep{font-family:var(--mono);font-size:.78rem;padding:5px 0;border-bottom:1px dashed var(--hair);display:flex;gap:8px;align-items:baseline}
+  .ep:last-child{border-bottom:0}
+  .verb{font-weight:700;font-size:.66rem;padding:1px 7px;border-radius:6px;color:#fff;flex:0 0 auto}
+  .verb.get{background:#22c55e}.verb.post{background:var(--accent)}.verb.pub{background:#a855f7}.verb.sub{background:#f59e0b;color:#1a1a1a}
+  /* firehose */
+  .parts{display:grid;grid-template-columns:repeat(16,1fr);gap:4px;margin:10px 0}
+  .part{height:26px;border-radius:5px;background:var(--panel-2);border:1px solid var(--hair);
+    display:grid;place-items:center;font-family:var(--mono);font-size:.6rem;color:var(--text-faint);position:relative;overflow:hidden}
+  .part.hot::after{content:'';position:absolute;inset:0;background:var(--accent-grad);opacity:.85;
+    animation:hot .9s ease}
+  @keyframes hot{from{opacity:0}50%{opacity:.9}to{opacity:0}}
+  /* diagram + svg */
+  .diagram{position:relative;width:100%;border-radius:var(--radius);border:1px solid var(--hair);
+    background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.005));overflow:hidden}
+  .diagram svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+  .diagram .node{position:absolute;transform:translate(-50%,-50%);z-index:2;width:var(--w,160px);cursor:pointer}
+  .diagram .node .sub{font-size:.68rem;color:var(--text-dim);margin-top:3px;line-height:1.35}
+  .packet{fill:var(--accent-2);filter:drop-shadow(0 0 4px var(--accent-2))}
+  .packet.p2{fill:#a855f7;filter:drop-shadow(0 0 4px #a855f7)}
+  .packet.p3{fill:#22c55e;filter:drop-shadow(0 0 4px #22c55e)}
+  /* ER cards */
+  .ergrid{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;z-index:2}
+  @media(max-width:900px){.ergrid{grid-template-columns:1fr}}
+  .entity{cursor:pointer;transition:all .22s}
+  .entity.dim{opacity:.32;filter:grayscale(.4)}
+  .entity.hot{border-color:var(--accent)!important;box-shadow:var(--glow)}
+  .entity.rel{border-color:var(--accent-2)!important}
+  .entity h4{font-family:var(--mono);font-size:.9rem;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+  .entity .cnt{font-size:.66rem;color:var(--text-faint);margin-left:auto}
+  .cols{list-style:none;margin:8px 0 0;padding:0;font-size:.76rem}
+  .cols li{display:flex;gap:8px;padding:2px 0;color:var(--text-dim)}
+  .cols li .cn{font-family:var(--mono);color:var(--text)}
+  .cols li.pk .cn{color:var(--accent-2)} .cols li.fk .cn{color:#a855f7}
+  .cols li .ty{margin-left:auto;color:var(--text-faint);font-size:.68rem}
+  .key{font-size:.6rem;padding:0 5px;border-radius:4px;font-weight:700}
+  .key.PK{background:var(--accent-2);color:#03212a}.key.FK{background:#a855f7;color:#fff}
+  /* drawer */
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:400px;max-width:92vw;z-index:80;
+    background:rgba(10,14,26,.92);backdrop-filter:blur(20px);border-left:1px solid var(--hair-strong);
+    box-shadow:-30px 0 80px -30px rgba(0,0,0,.8);transform:translateX(105%);transition:transform .32s cubic-bezier(.4,0,.2,1);padding:22px;overflow-y:auto}
+  .drawer.open{transform:none}
+  .drawer .x{position:absolute;top:16px;right:18px;cursor:pointer;font-size:1.3rem;color:var(--text-dim);width:32px;height:32px;display:grid;place-items:center;border-radius:8px;border:1px solid var(--hair)}
+  .drawer .x:hover{color:#fff}
+  .drawer .tag{font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent-2);font-weight:650}
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:79;opacity:0;pointer-events:none;transition:opacity .3s}
+  .backdrop.open{opacity:1;pointer-events:auto}
+  /* sequence */
+  .seqwrap{overflow-x:auto}
+  .seq{min-width:720px}
+  .refbox{font-family:var(--mono);font-size:1.1rem;letter-spacing:.06em;padding:14px 18px;border-radius:12px;
+    background:var(--panel-2);border:1px solid var(--hair);display:inline-flex;gap:6px;align-items:center}
+  .refbox b{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="badge">🛡</span>
+    <span>MPSCC<small>Low-Level Design</small></span>
+  </div>
+  <span class="pill">Architecture · Engineering View</span>
+  <span class="clock" id="clock">--:--:--</span>
+  <a href="index.html" class="btn" style="margin-left:14px">← Design Portal</a>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="services">Microservices</div>
+  <div class="tab" data-tab="kafka">Kafka Topics</div>
+  <div class="tab" data-tab="data">Data Model</div>
+  <div class="tab" data-tab="pipeline">Location Pipeline</div>
+  <div class="tab" data-tab="seq">Sequence Flows</div>
+</div>
+
+<div class="wrap" style="padding-top:26px;padding-bottom:60px">
+
+<!-- ============ TAB 1 : MICROSERVICES ============ -->
+<section class="tabpane active" id="services">
+  <h1>Microservices</h1>
+  <p class="subttl">Maven multi-module monorepo — each service a Spring Boot app under <span class="mono">services/&lt;name&gt;/</span> sharing <span class="mono">shared-lib</span> (DTOs, Kafka schemas, JWT filter). Expand a card for its REST endpoints and Kafka in/out.</p>
+  <div class="svcgrid" id="svcgrid"></div>
+</section>
+
+<!-- ============ TAB 2 : KAFKA TOPICS ============ -->
+<section class="tabpane" id="kafka">
+  <h1>Kafka Topics</h1>
+  <p class="subttl">Two workloads on one backbone: a durable low-volume event stream and the high-volume location firehose. Retention and partition counts are tuned per topic.</p>
+  <div class="panel scroll" style="margin-bottom:20px">
+    <table>
+      <thead><tr><th>Topic</th><th>Key</th><th>Parts</th><th>Retention</th><th>Producers → Consumers</th></tr></thead>
+      <tbody id="topicRows"></tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Location firehose — <span class="mono">locations.updates</span> partitioned by officerId across 32 partitions</div>
+    <p style="font-size:.85rem">Keying by <span class="mono">officerId</span> keeps each officer's positions ordered; 32 partitions parallelise the 3k/sec load across consumer instances. Click <b>Emit burst</b> to watch officer updates hash to partitions.</p>
+    <div style="display:flex;gap:14px;align-items:center;margin:10px 0 6px">
+      <div class="node sim" style="width:180px"><div class="kind">Producer</div><div class="name">location-simulator</div></div>
+      <span class="flowlab">key = officerId → hash % 32</span>
+    </div>
+    <div class="parts" id="parts32"></div>
+    <div style="display:flex;gap:14px;align-items:center;margin-top:8px">
+      <div class="node" style="width:200px"><div class="kind">Consumer group</div><div class="name">location-ingest ×N</div></div>
+      <button class="btn primary" id="burstBtn">⚡ Emit burst</button>
+      <span class="chip" id="burstStat">idle</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TAB 3 : DATA MODEL ============ -->
+<section class="tabpane" id="data">
+  <h1>Data Model</h1>
+  <p class="subttl">PostgreSQL 16 + PostGIS holds all transactional &amp; master data; spatial columns are <span class="mono">geography(Point,4326)</span> with GiST indexes. Click an entity to spotlight its relationships. TimescaleDB owns <span class="mono">location_history</span>.</p>
+
+  <div class="grid grid-2" style="margin-bottom:20px">
+    <div class="panel">
+      <div class="panel-title">Incident reference — DDMMYY-NNNNNNN</div>
+      <div class="refbox"><span class="dim">04 07 26</span> <b>–</b> <b>0010042</b></div>
+      <p style="font-size:.8rem;margin-top:10px"><span class="mono">DDMMYY</span> = creation date · <span class="mono">NNNNNNN</span> = 7-digit sequence from <span class="mono">incident_seq</span> starting at 10000. Example: <span class="mono">040726-0010042</span>.</p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Priorities &amp; SLA</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;gap:10px;align-items:center"><span class="prio prio-1">P1</span><span style="font-size:.8rem">Emergency — attend within <b>10 min</b> (danger to life)</span></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="prio prio-2">P2</span><span style="font-size:.8rem">Priority — within ~1 hour</span></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="prio prio-3">P3</span><span style="font-size:.8rem">Prompt — same shift / few hours</span></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="prio prio-4">P4</span><span style="font-size:.8rem">Scheduled — appointment within days</span></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="prio prio-5">P5</span><span style="font-size:.8rem">Resolution without deployment (e.g. fraud referral)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint"><span class="k"></span> click an entity to spotlight its foreign-key relationships</div>
+  <div class="diagram" id="erDiagram" style="padding:20px">
+    <svg class="wires"></svg>
+    <div class="ergrid" id="ergrid"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 4 : LOCATION PIPELINE ============ -->
+<section class="tabpane" id="pipeline">
+  <h1>Location Pipeline</h1>
+  <p class="subttl">The platform's heart and biggest risk: move ~15k officers, ingest ~3k/sec, and show the visible subset live at 60 fps. Three stores, three jobs — never the same store for two jobs. Packets fan out from ingest to Redis, TimescaleDB and the WS gateway.</p>
+  <div class="hint"><span class="k"></span> watch packets flow simulator → Kafka → ingest → fan-out · click a node</div>
+  <div class="diagram" id="pipe" style="height:520px">
+    <svg class="wires"></svg>
+    <div class="node sim"  id="p-sim"    style="left:12%;top:26%;--w:170px" data-info="p-sim"><div class="kind">Producer</div><div class="name">location-simulator</div><div class="sub">OSRM routes · 5 s tick</div></div>
+    <div class="node"      id="p-kafka"  style="left:37%;top:26%;--w:190px" data-info="p-kafka"><div class="kind">Kafka</div><div class="name">locations.updates</div><div class="sub">key=officerId · 32 parts · 6h</div></div>
+    <div class="node sim"  id="p-ingest" style="left:37%;top:60%;--w:190px" data-info="p-ingest"><div class="kind">Consumer group ×N</div><div class="name">location-ingest</div><div class="sub">idempotent · batched</div></div>
+    <div class="node data" id="p-redis"  style="left:70%;top:16%;--w:180px" data-info="p-redis"><div class="kind">Store 1</div><div class="name">Redis 7 GEO + hash</div><div class="sub">GEOADD · current pos</div></div>
+    <div class="node data" id="p-ts"     style="left:70%;top:48%;--w:180px" data-info="p-ts"><div class="kind">Store 2</div><div class="name">TimescaleDB</div><div class="sub">multi-row INSERT · hypertable</div></div>
+    <div class="node"      id="p-deltas" style="left:70%;top:80%;--w:180px" data-info="p-deltas"><div class="kind">Kafka</div><div class="name">locations.deltas</div><div class="sub">key=geohash tile · 16 parts</div></div>
+    <div class="node"      id="p-ws"     style="left:90%;top:80%;--w:120px" data-info="p-ws"><div class="kind">Fan-out</div><div class="name">WS gateway</div><div class="sub">→ browser viewport</div></div>
+    <div class="node"      id="p-geo"    style="left:90%;top:32%;--w:120px" data-info="p-geo"><div class="kind">Query</div><div class="name">geo-query</div><div class="sub">GEOSEARCH BYBOX</div></div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:20px">
+    <div class="panel">
+      <div class="panel-title">Three stores, three jobs — §5.1</div>
+      <table>
+        <thead><tr><th>Store</th><th>Holds</th><th>Access pattern</th></tr></thead>
+        <tbody>
+          <tr><td><b>Redis GEO</b></td><td>Current position + status of every on-shift officer</td><td>write 3k/s · read by bounding box · sub-ms</td></tr>
+          <tr><td><b>TimescaleDB</b></td><td>Every position ever, append-only</td><td>batch write 3k/s · time-range read for audit</td></tr>
+          <tr><td><b>PostgreSQL</b></td><td>Officer master data, skills, assignments</td><td>transactional · low rate</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Viewport streaming — the scalability lever (§5.5)</div>
+      <p style="font-size:.85rem">The platform <b>never</b> streams 3k/sec to a browser. Instead:</p>
+      <ol style="font-size:.83rem;color:var(--text-dim);padding-left:18px;line-height:1.55">
+        <li>Map publishes <b>bounds + zoom</b> to <span class="mono">locations.viewport-req</span> (debounced ~250 ms).</li>
+        <li>geo-query runs Redis <span class="mono">GEOSEARCH BYBOX</span> → snapshot (or clusters below zoom Z).</li>
+        <li>Gateway forwards only <span class="mono">locations.deltas</span> whose geohash tile intersects the client's viewport — tens–hundreds/s, not thousands.</li>
+        <li>Zoom-dependent detail: cluster bubbles below Z, typed icons with heading above Z.</li>
+      </ol>
+      <p style="font-size:.82rem"><b>Client load is bounded to what is visible</b>, independent of the 40k fleet — the single most important scalability decision.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TAB 5 : SEQUENCE FLOWS ============ -->
+<section class="tabpane" id="seq">
+  <h1>Sequence Flows</h1>
+  <p class="subttl">Two vertical sequence diagrams built from service lifelines. Solid blue = sync REST · dashed cyan = Kafka event · purple = datastore. Message labels use the real REST paths and topic names from doc 04.</p>
+
+  <div class="panel" style="margin-bottom:22px">
+    <div class="panel-title">(a) 999 call → incident created</div>
+    <div class="legend" style="margin-bottom:12px">
+      <span><span class="dot" style="background:var(--accent)"></span>REST</span>
+      <span><span class="dot" style="background:var(--accent-2)"></span>Kafka</span>
+      <span><span class="dot" style="background:#a855f7"></span>datastore</span>
+    </div>
+    <div class="seqwrap"><svg id="seqA" class="seq"></svg></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">(b) dispatch assign → ON_ROUTE → ARRIVED</div>
+    <div class="seqwrap"><svg id="seqB" class="seq"></svg></div>
+  </div>
+</section>
+
+</div>
+
+<!-- drawer -->
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer"><div class="x" id="drawerX">✕</div><div id="drawerBody"></div></aside>
+
+<div class="footer">MPSCC — Metropolitan Police Service Command &amp; Control · Low-Level Design · glassmorphism control-room design system</div>
+
+<script>
+/* ---------- clock ---------- */
+function tick(){document.getElementById('clock').textContent=
+  new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date())+' Europe/London';}
+tick();setInterval(tick,1000);
+
+/* ---------- tabs ---------- */
+document.getElementById('tabs').addEventListener('click',e=>{
+  const t=e.target.closest('.tab');if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tabpane').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');document.getElementById(t.dataset.tab).classList.add('active');
+  requestAnimationFrame(redrawAll);
+});
+
+/* ---------- SVG wiring helper (shared) ---------- */
+const SVGNS='http://www.w3.org/2000/svg';
+function centre(el,host){const a=el.getBoundingClientRect(),r=host.getBoundingClientRect();
+  return{x:a.left+a.width/2-r.left,y:a.top+a.height/2-r.top};}
+function wire(diagId,conns){
+  const d=document.getElementById(diagId);if(!d)return;
+  const svg=d.querySelector('svg.wires');
+  const draw=()=>{
+    const r=d.getBoundingClientRect();
+    svg.setAttribute('viewBox',`0 0 ${r.width} ${r.height}`);
+    while(svg.firstChild)svg.removeChild(svg.firstChild);
+    const defs=document.createElementNS(SVGNS,'defs');
+    defs.innerHTML='<marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="rgba(154,166,189,.7)"/></marker>';
+    svg.appendChild(defs);
+    (typeof conns==='function'?conns():conns).forEach((c,i)=>{
+      const A=document.getElementById(c.from),B=document.getElementById(c.to);if(!A||!B)return;
+      const a=centre(A,d),b=centre(B,d);
+      let dd;
+      if(c.curve){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2+c.curve;dd=`M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}`;}
+      else dd=`M${a.x},${a.y} L${b.x},${b.y}`;
+      const path=document.createElementNS(SVGNS,'path');
+      path.setAttribute('d',dd);path.setAttribute('fill','none');
+      path.setAttribute('stroke',c.color||'rgba(154,166,189,.35)');
+      path.setAttribute('stroke-width',c.w||1.6);
+      if(c.dash)path.setAttribute('stroke-dasharray','6 6');
+      if(c.arrow!==false)path.setAttribute('marker-end','url(#ah)');
+      svg.appendChild(path);
+      if(c.flow!==false){
+        const pk=document.createElementNS(SVGNS,'circle');
+        pk.setAttribute('r',c.r||3.2);pk.setAttribute('class','packet'+(c.pk?' '+c.pk:''));
+        const mo=document.createElementNS(SVGNS,'animateMotion');
+        mo.setAttribute('dur',(c.dur||(2.0+(i%5)*0.3))+'s');
+        mo.setAttribute('repeatCount','indefinite');mo.setAttribute('path',dd);
+        pk.appendChild(mo);svg.appendChild(pk);
+      }
+    });
+  };
+  d._draw=draw;draw();
+}
+function drawPipe(){
+  const cy='rgba(34,211,238,.55)';
+  wire('pipe',[
+    {from:'p-sim',to:'p-kafka',color:cy,w:2},
+    {from:'p-kafka',to:'p-ingest',color:cy,w:2},
+    {from:'p-ingest',to:'p-redis',color:'rgba(34,197,94,.55)',pk:'p3',w:1.8},
+    {from:'p-ingest',to:'p-ts',color:'rgba(168,85,247,.55)',pk:'p2',w:1.8},
+    {from:'p-ingest',to:'p-deltas',color:cy,w:1.8},
+    {from:'p-deltas',to:'p-ws',color:cy},
+    {from:'p-redis',to:'p-geo',color:'rgba(34,197,94,.45)',curve:-20,arrow:false},
+    {from:'p-geo',to:'p-ws',color:'rgba(47,107,255,.45)',curve:40},
+  ]);
+}
+function redrawAll(){['pipe','erDiagram'].forEach(id=>{const d=document.getElementById(id);if(d&&d._draw)d._draw();});drawER();}
+drawPipe();
+window.addEventListener('resize',redrawAll);
+window.addEventListener('load',redrawAll);
+
+/* ---------- drawer ---------- */
+const drawer=document.getElementById('drawer'),backdrop=document.getElementById('backdrop'),dbody=document.getElementById('drawerBody');
+const PINFO={
+ 'p-sim':{tag:'Simulator',t:'location-simulator-service',b:'Moves every on-shift officer along an OSRM polyline at mode-realistic speed. Ticks every 5 s: advances by speed×5s, computes new lat/long + heading, emits a LocationUpdate. Sharded by officer-id modulo N to fan out the 15k-officer tick.'},
+ 'p-kafka':{tag:'Kafka topic',t:'locations.updates',b:'key = officerId · 32 partitions · 6 h retention. Per-officer ordering guaranteed by the key; 32 partitions parallelise 3k/sec across consumer instances.'},
+ 'p-ingest':{tag:'Consumer group',t:'location-ingest-service',b:'Consumes locations.updates. Idempotent (GEOADD overwrites). Writes Redis first (cheap), buffers ~1–2 s / 5000 rows then one multi-row INSERT/COPY to TimescaleDB (~2 batches/sec), and emits per-tile locations.deltas.'},
+ 'p-redis':{tag:'Store 1 · live',t:'Redis 7 GEO + hash',b:'GEOADD officers:live <lon> <lat> <officerId> per update (O(log N)); HSET officer:<id> mode/status/heading/speed/incident. ~15k small entries, a few MB. Missing >30 s → greyed STALE.'},
+ 'p-ts':{tag:'Store 2 · history',t:'TimescaleDB',b:'Hypertable location_history, chunk_time_interval 1 hour; index (officer_id, ts DESC); compression policy after 2 h (10–20×). Point-in-time and full-journey audit via time-range SQL.'},
+ 'p-deltas':{tag:'Kafka topic',t:'locations.deltas',b:'key = geohash tile · 16 partitions · 1 h retention. Producer location-ingest → consumer geo-query for WS fan-out.'},
+ 'p-ws':{tag:'Fan-out',t:'WebSocket gateway',b:'Forwards only deltas whose geohash tile intersects each client viewport. A dispatcher watching one neighbourhood gets tens–hundreds of deltas/s.'},
+ 'p-geo':{tag:'Service · :8086',t:'geo-query-service',b:'Translates viewport bounds into Redis GEOSEARCH BYBOX; returns clusters when zoomed out, typed resources when zoomed in. Also powers nearest-trained-resource.'},
+};
+function openInfo(k){const d=PINFO[k];if(!d)return;dbody.innerHTML=`<div class="tag">${d.tag}</div><h3 style="padding-right:40px">${d.t}</h3><p>${d.b}</p>`;drawer.classList.add('open');backdrop.classList.add('open');}
+function closeInfo(){drawer.classList.remove('open');backdrop.classList.remove('open');}
+document.getElementById('drawerX').onclick=closeInfo;backdrop.onclick=closeInfo;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeInfo();});
+document.querySelectorAll('[data-info]').forEach(n=>n.addEventListener('click',()=>openInfo(n.dataset.info)));
+
+/* ---------- microservice cards ---------- */
+const SVC=[
+ {ic:'🚪',n:'api-gateway',port:':8080',resp:'Spring Cloud Gateway. JWT validation, CORS, rate-limit, REST + WebSocket routing.',owns:'—',eps:[['get','routes /** → downstream services'],['sub','proxies STOMP/WSS to WS gateway']]},
+ {ic:'🔐',n:'auth-service',port:':8081',resp:'Users, roles, groups, login, JWT issuance.',owns:'users, roles, groups',eps:[['post','/api/auth/login → JWT'],['get','/api/auth/me']]},
+ {ic:'🎧',n:'call-intake-service',port:':8082',resp:'Responder backend: intake queue API, incident creation, ref generation.',owns:'incidents (write path)',eps:[['get','/api/intake/queue — level + next call'],['post','/api/intake/answer — pull CallInbound, open crime stream'],['post','/api/incidents — create row, gen DDMMYY-NNNNNNN'],['pub','incidents.created']]},
+ {ic:'📋',n:'incident-service',port:':8083',resp:'Incident read model, dispatch queue projection, status transitions.',owns:'incidents, incident_assignments',eps:[['get','/api/incidents/queue?status=WAITING,ACTIVE'],['get','/api/incidents/{ref} — full detail'],['sub','incidents.created · dispatch.assignments']]},
+ {ic:'📡',n:'dispatch-service',port:':8084',resp:'Dispatcher backend: READY, take-next, assignment orchestration, ON_ROUTE/ARRIVED.',owns:'incident_assignments',eps:[['post','/api/dispatch/ready — take-next, WAITING→ACTIVE'],['post','/api/dispatch/{incidentId}/assign'],['post','/api/dispatch/assignment/{id}/arrived'],['pub','dispatch.assignments · incidents.updated']]},
+ {ic:'👮',n:'resource-service',port:':8085',resp:'Officers, vehicles, skills, stations master data.',owns:'officers, vehicles, skills, stations',eps:[['get','/api/resources/officers'],['get','/api/resources/stations'],['sub','dispatch.assignments (status)']]},
+ {ic:'🗺️',n:'geo-query-service',port:':8086',resp:'Viewport queries, nearest-trained-resource, clustering.',owns:'reads Redis GEO + PostGIS',eps:[['post','/api/geo/viewport {bounds,zoom,filters}'],['post','/api/geo/nearest {incidentId,requiredSkills[],mode?,limit}'],['sub','locations.deltas → WS fan-out']]},
+ {ic:'📆',n:'shift-planning-service',port:':8087',resp:'Rules-engine roster generation, station balancing.',owns:'officer_shifts, shift_patterns',eps:[['post','/api/planning/generate'],['get','/api/planning/roster']]},
+ {ic:'📥',n:'location-ingest-service',port:'—',resp:'Kafka consumer → Redis GEO + TimescaleDB batch writer.',owns:'location_history',eps:[['sub','locations.updates'],['pub','locations.deltas'],['post','GEOADD/HSET Redis · multi-row INSERT Timescale']]},
+ {ic:'🛰️',n:'location-simulator-service',port:'—',resp:'Moves on-shift officers along OSRM routes, emits updates every 5 s.',owns:'—',eps:[['sub','dispatch.assignments (replace route)'],['pub','locations.updates (key=officerId)']]},
+ {ic:'☎️',n:'call-simulator-service',port:'—',resp:'Generates inbound 999 calls from M25 postcodes on a daily demand curve.',owns:'—',eps:[['pub','calls.inbound {callId,phone,addressOrFix,locationSource,accuracyMeters}']]},
+ {ic:'🔊',n:'crime-simulator-service',port:'—',resp:'Streams crime narrative / assessment fragments for a call.',owns:'—',eps:[['sub','calls.inbound (answered)'],['pub','calls.crime-stream → SSE to responder']]},
+ {ic:'🛣️',n:'routing-service',port:':8088',resp:'Thin wrapper over OSRM (routes, ETAs, snap-to-road).',owns:'—',eps:[['get','/route?from=lon,lat&to=lon,lat&profile=car|bike|foot']]},
+ {ic:'⚛️',n:'frontend',port:':3000',resp:'React app — Responder, Dispatch and Planner persona UIs.',owns:'—',eps:[['get','MapLibre GL · STOMP viewport subscriptions'],['sub','locations.deltas via WS gateway']]},
+];
+document.getElementById('svcgrid').innerHTML=SVC.map(s=>`
+  <div class="panel svc">
+    <h3><span>${s.ic}</span>${s.n}<span class="port">${s.port}</span></h3>
+    <div class="resp">${s.resp}</div>
+    <div class="owns"><b>Owns</b> &nbsp;<span class="mono">${s.owns}</span></div>
+    <details class="acc"><summary>Endpoints &amp; Kafka</summary>
+      <div class="body" style="padding-top:6px">
+        ${s.eps.map(e=>`<div class="ep"><span class="verb ${e[0]}">${e[0].toUpperCase()}</span><span>${e[1]}</span></div>`).join('')}
+      </div>
+    </details>
+  </div>`).join('');
+
+/* ---------- Kafka topic table ---------- */
+const TOPICS=[
+ ['calls.inbound','postcode','6','1 day','call-simulator → call-intake'],
+ ['calls.crime-stream','callId','6','1 day','crime-simulator → call-intake (SSE to responder)'],
+ ['incidents.created','incidentId','6','7 days','call-intake → incident, dispatch'],
+ ['incidents.updated','incidentId','6','7 days','incident/dispatch → all (status changes)'],
+ ['dispatch.assignments','incidentId','6','7 days','dispatch → incident, resource, location-sim'],
+ ['locations.updates','officerId','<b>32</b>','6 hours','location-simulator → location-ingest'],
+ ['locations.deltas','geohash tile','16','1 hour','location-ingest → geo-query (WS fan-out)'],
+];
+document.getElementById('topicRows').innerHTML=TOPICS.map(t=>`
+  <tr><td class="mono">${t[0]}</td><td class="mono">${t[1]}</td><td class="mono">${t[2]}</td><td>${t[3]}</td><td style="font-size:.8rem">${t[4]}</td></tr>`).join('');
+
+/* ---------- 32-partition firehose ---------- */
+const parts=document.getElementById('parts32');
+for(let i=0;i<32;i++){const p=document.createElement('div');p.className='part';p.id='pt'+i;p.textContent='p'+i;parts.appendChild(p);}
+document.getElementById('burstBtn').onclick=()=>{
+  const stat=document.getElementById('burstStat');let count=0;
+  stat.textContent='emitting…';
+  const iv=setInterval(()=>{
+    const officer=Math.floor(Math.random()*15000);
+    const part=officer%32;
+    const el=document.getElementById('pt'+part);
+    el.classList.remove('hot');void el.offsetWidth;el.classList.add('hot');
+    count++;stat.textContent=count+' updates · officer#'+officer+' → p'+part;
+    if(count>=60){clearInterval(iv);stat.textContent=count+' updates emitted across 32 partitions';}
+  },60);
+};
+
+/* ---------- Data model ER ---------- */
+const ENTITIES=[
+ {id:'crime_types',cnt:'40 rows',cols:[['code','PK','TEXT'],['name','','TEXT'],['category','','TEXT'],['default_priority','','INT 1-5'],['typical_response','','TEXT']]},
+ {id:'incidents',cnt:'grows',cols:[['id','PK','BIGSERIAL'],['reference','','TEXT uniq'],['crime_code','FK','→ crime_types'],['priority','','INT 1-5'],['status','','WAITING…RESOLVED'],['location','','geography(Point,4326)'],['created_by','FK','→ users'],['created_at','','TIMESTAMPTZ']]},
+ {id:'incident_assignments',cnt:'grows',cols:[['id','PK','BIGSERIAL'],['incident_id','FK','→ incidents'],['officer_id','FK','→ officers'],['vehicle_id','FK','→ vehicles'],['state','','ASSIGNED→CLEARED'],['eta_seconds','','INT (OSRM)']]},
+ {id:'officers',cnt:'40,000',cols:[['id','PK','BIGSERIAL'],['collar_number','','TEXT uniq'],['rank','','TEXT'],['home_station','FK','→ stations'],['default_mode','','FOOT/CAR/…'],['is_firearms','','BOOLEAN'],['status','','OFF_DUTY…ON_SCENE']]},
+ {id:'stations',cnt:'113',cols:[['id','PK','BIGSERIAL'],['name','','TEXT'],['type','','COMMAND_CENTRE/…'],['borough','','TEXT'],['location','','geography(Point,4326)'],['capacity','','INT']]},
+ {id:'vehicles',cnt:'~10,390',cols:[['id','PK','BIGSERIAL'],['type','','CAR/VAN/HORSE/…'],['identifier','','TEXT uniq'],['seats','','INT'],['home_station','FK','→ stations'],['status','','AVAILABLE/IN_USE']]},
+ {id:'location_history',cnt:'millions/day',cols:[['officer_id','FK','→ officers'],['ts','PK','TIMESTAMPTZ'],['location','','geography(Point,4326)'],['mode','','TEXT'],['speed_kmh','','REAL'],['heading','','SMALLINT']],ts:true},
+];
+// FK relationships (from,to)
+const RELS=[
+ ['incidents','crime_types'],['incident_assignments','incidents'],['incident_assignments','officers'],
+ ['incident_assignments','vehicles'],['officers','stations'],['vehicles','stations'],['location_history','officers'],
+];
+const REL_OF={};ENTITIES.forEach(e=>REL_OF[e.id]=new Set());
+RELS.forEach(([a,b])=>{REL_OF[a].add(b);REL_OF[b].add(a);});
+document.getElementById('ergrid').innerHTML=ENTITIES.map(e=>`
+  <div class="panel entity" id="e-${e.id}" data-e="${e.id}">
+    <h4>${e.ts?'📈 ':''}${e.id}<span class="cnt">${e.cnt}</span></h4>
+    <ul class="cols">${e.cols.map(c=>`<li class="${c[1]==='PK'?'pk':c[1]==='FK'?'fk':''}"><span class="cn">${c[0]}</span>${c[1]?`<span class="key ${c[1]}">${c[1]}</span>`:''}<span class="ty">${c[2]}</span></li>`).join('')}</ul>
+  </div>`).join('');
+let selEntity=null;
+function drawER(){
+  const conns=[];
+  RELS.forEach(([a,b])=>{
+    const active=selEntity&&(a===selEntity||b===selEntity);
+    conns.push({from:'e-'+a,to:'e-'+b,color:active?'rgba(34,211,238,.8)':'rgba(168,85,247,.28)',
+      w:active?2.2:1.3,curve:24,arrow:false,pk:'p2',flow:active,dur:2.4});
+  });
+  wire('erDiagram',conns);
+}
+document.querySelectorAll('.entity').forEach(el=>{
+  el.addEventListener('click',()=>{
+    const id=el.dataset.e;
+    if(selEntity===id){selEntity=null;}else{selEntity=id;}
+    document.querySelectorAll('.entity').forEach(x=>{
+      x.classList.remove('dim','hot','rel');
+      if(selEntity){
+        if(x.dataset.e===selEntity)x.classList.add('hot');
+        else if(REL_OF[selEntity].has(x.dataset.e))x.classList.add('rel');
+        else x.classList.add('dim');
+      }
+    });
+    drawER();
+  });
+});
+drawER();
+
+/* ---------- Sequence diagrams ---------- */
+function drawSeq(svgId,lanes,msgs){
+  const svg=document.getElementById(svgId);
+  const W=Math.max(720,lanes.length*150), topY=54, rowH=46, botPad=20;
+  const H=topY+msgs.length*rowH+botPad;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('height',H);
+  const lx={};const step=W/(lanes.length+1);
+  lanes.forEach((l,i)=>lx[l.id]=step*(i+1));
+  let out='<defs><marker id="sa" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="var(--accent-2)"/></marker></defs>';
+  // lifelines
+  lanes.forEach(l=>{
+    const x=lx[l.id];
+    out+=`<line x1="${x}" y1="${topY}" x2="${x}" y2="${H-botPad}" stroke="rgba(154,166,189,.25)" stroke-dasharray="4 5"/>`;
+    out+=`<rect x="${x-64}" y="10" width="128" height="34" rx="9" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.18)"/>`;
+    out+=`<text x="${x}" y="31" text-anchor="middle" fill="#e8edf7" font-size="12" font-weight="600" font-family="Inter">${l.label}</text>`;
+  });
+  // messages
+  const colorOf=k=>k==='kafka'?'#22d3ee':k==='db'?'#a855f7':'#2f6bff';
+  msgs.forEach((m,i)=>{
+    const y=topY+18+i*rowH;
+    const x1=lx[m.from],x2=lx[m.to],col=colorOf(m.kind);
+    const dash=m.kind==='kafka'?'stroke-dasharray="6 5"':'';
+    if(x1===x2){ // self message
+      out+=`<path d="M${x1},${y} h44 v18 h-44" fill="none" stroke="${col}" stroke-width="1.8" ${dash} marker-end="url(#sa)"/>`;
+      out+=`<text x="${x1+50}" y="${y-4}" fill="${col}" font-size="11" font-family="Inter">${m.label}</text>`;
+    }else{
+      const dir=x2>x1?1:-1;
+      out+=`<line x1="${x1}" y1="${y}" x2="${x2-dir*6}" y2="${y}" stroke="${col}" stroke-width="1.8" ${dash} marker-end="url(#sa)"/>`;
+      const midx=(x1+x2)/2;
+      out+=`<text x="${midx}" y="${y-7}" text-anchor="middle" fill="${col}" font-size="11" font-family="Inter" font-weight="500">${m.label}</text>`;
+      // animated packet
+      out+=`<circle r="3" fill="${col}"><animateMotion dur="${2.4+(i%4)*0.3}s" repeatCount="indefinite" path="M${x1},${y} L${x2},${y}"/></circle>`;
+    }
+  });
+  svg.innerHTML=out;
+}
+drawSeq('seqA',
+  [{id:'sim',label:'call-sim'},{id:'intake',label:'call-intake'},{id:'crime',label:'crime-sim'},{id:'db',label:'Postgres'},{id:'kafka',label:'Kafka'},{id:'inc',label:'incident-svc'}],
+  [
+    {from:'sim',to:'kafka',kind:'kafka',label:'calls.inbound'},
+    {from:'kafka',to:'intake',kind:'kafka',label:'consume CallInbound'},
+    {from:'intake',to:'intake',kind:'rest',label:'GET /api/intake/queue'},
+    {from:'intake',to:'crime',kind:'rest',label:'open crime stream (answer)'},
+    {from:'crime',to:'intake',kind:'kafka',label:'calls.crime-stream (SSE fragments)'},
+    {from:'intake',to:'db',kind:'db',label:'INSERT incidents · nextval(incident_seq)'},
+    {from:'db',to:'intake',kind:'db',label:'ref DDMMYY-NNNNNNN'},
+    {from:'intake',to:'kafka',kind:'kafka',label:'publish incidents.created'},
+    {from:'kafka',to:'inc',kind:'kafka',label:'project → dispatch queue'},
+  ]);
+drawSeq('seqB',
+  [{id:'disp',label:'dispatch-svc'},{id:'geo',label:'geo-query'},{id:'route',label:'routing-svc'},{id:'db',label:'Postgres'},{id:'kafka',label:'Kafka'},{id:'locsim',label:'location-sim'}],
+  [
+    {from:'disp',to:'disp',kind:'rest',label:'POST /api/dispatch/ready (take-next → ACTIVE)'},
+    {from:'disp',to:'geo',kind:'rest',label:'POST /api/geo/nearest {skills[]}'},
+    {from:'geo',to:'disp',kind:'rest',label:'ranked candidates'},
+    {from:'disp',to:'route',kind:'rest',label:'GET /route (ETA)'},
+    {from:'disp',to:'db',kind:'db',label:'INSERT incident_assignments (ASSIGNED)'},
+    {from:'disp',to:'kafka',kind:'kafka',label:'dispatch.assignments'},
+    {from:'kafka',to:'locsim',kind:'kafka',label:'replace route → ON_ROUTE'},
+    {from:'locsim',to:'kafka',kind:'kafka',label:'locations.updates (moving)'},
+    {from:'disp',to:'disp',kind:'rest',label:'POST /assignment/{id}/arrived → ON_SCENE'},
+  ]);
+</script>
+</body>
+</html>
