@@ -77,6 +77,18 @@ services:
     ports: ["8080:8080"]
     restart: unless-stopped
 
+  resource-service:
+    build: { context: ., dockerfile: services/resource-service/Dockerfile }
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-mpscc}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-mpscc}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-mpscc_dev_change_me}
+      JAVA_TOOL_OPTIONS: "-Xmx512m"
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: ["8085:8085"]
+    restart: unless-stopped
+
   frontend:
     build: { context: ./frontend, dockerfile: Dockerfile }
     ports: ["3000:80"]

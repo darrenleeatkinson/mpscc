@@ -29,6 +29,7 @@
         <module>services/shared-lib</module>
         <module>services/auth-service</module>
         <module>services/api-gateway</module>
+        <module>services/resource-service</module>
     </modules>
 
     <dependencyManagement>
