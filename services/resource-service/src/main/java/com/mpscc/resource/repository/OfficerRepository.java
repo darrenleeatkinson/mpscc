@@ -7,16 +7,19 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 public interface OfficerRepository extends JpaRepository<Officer, Long> {
 
     @Query("""
             SELECT o FROM Officer o
-            WHERE (:rank IS NULL OR o.rank = :rank)
+            WHERE (:ranksEmpty = true OR o.rank IN :ranks)
               AND (:stationId IS NULL OR o.homeStationId = :stationId)
               AND (:firearms IS NULL OR o.firearms = :firearms)
             """)
     Page<Officer> findFiltered(
-            @Param("rank") String rank,
+            @Param("ranksEmpty") boolean ranksEmpty,
+            @Param("ranks") List<String> ranks,
             @Param("stationId") Long stationId,
             @Param("firearms") Boolean firearms,
             Pageable pageable);

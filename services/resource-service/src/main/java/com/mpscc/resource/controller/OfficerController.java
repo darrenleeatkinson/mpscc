@@ -33,10 +33,11 @@ public class OfficerController {
     public Page<Officer> list(
             @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String rank,
+            @RequestParam(required = false) List<String> rank,
             @RequestParam(required = false) Long station,
             @RequestParam(required = false) Boolean firearms) {
-        return officers.findFiltered(rank, station, firearms,
+        boolean ranksEmpty = (rank == null || rank.isEmpty());
+        return officers.findFiltered(ranksEmpty, ranksEmpty ? List.of() : rank, station, firearms,
                 PageRequest.of(page, size, Sort.by("surname", "forename")));
     }
 

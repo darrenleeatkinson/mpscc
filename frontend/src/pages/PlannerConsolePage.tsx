@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import TopBar from '../components/TopBar'
+import { DarkSelect, DarkMultiSelect } from '../components/DarkSelect'
+import type { SelectOption } from '../components/DarkSelect'
 import { api } from '../api/client'
 
 // ── types ─────────────────────────────────────────────────────────────────
@@ -27,31 +29,16 @@ interface PageResult<T> {
   number: number
 }
 
-interface OfficerCounts {
-  total: number
-  firearms: number
-  pc: number
-  dc: number
-}
-
-interface Station {
-  id: number
-  name: string
-  borough: string
-}
-
-interface Skill {
-  id: number
-  code: string
-  name: string
-  category: string
-}
+interface OfficerCounts { total: number; firearms: number; pc: number; dc: number }
+interface Station { id: number; name: string; borough: string }
+interface Skill { id: number; code: string; name: string; category: string }
 
 // ── constants ──────────────────────────────────────────────────────────────
 
-const RANKS = ['PC', 'PS', 'DC', 'DS', 'DI', 'INSP', 'CI', 'SUPT', 'DCI']
-const STATUSES = ['ON_DUTY', 'OFF_DUTY', 'ON_SCENE', 'AVAILABLE', 'UNAVAILABLE']
-const MODES = ['FOOT', 'CAR', 'VAN', 'MOTORBIKE', 'SCOOTER', 'PUSHBIKE', 'DOG_CAR']
+const RANK_OPTS: SelectOption[]   = ['PC','PS','DC','DS','DI','INSP','CI','SUPT','DCI'].map(r => ({ value: r, label: r }))
+const STATUS_OPTS: SelectOption[] = ['ON_DUTY','OFF_DUTY','ON_SCENE','AVAILABLE','UNAVAILABLE'].map(s => ({ value: s, label: s.replace(/_/g, ' ') }))
+const MODE_OPTS: SelectOption[]   = ['FOOT','CAR','VAN','MOTORBIKE','SCOOTER','PUSHBIKE','DOG_CAR'].map(m => ({ value: m, label: m.replace(/_/g, ' ') }))
+const FA_OPTS: SelectOption[]     = [{ value: 'true', label: 'Firearms only' }, { value: 'false', label: 'Non-firearms' }]
 
 const CATEGORY_COLORS: Record<string, string> = {
   TACTICAL:      '#ef4444',
@@ -60,22 +47,20 @@ const CATEGORY_COLORS: Record<string, string> = {
   SPECIALIST:    '#8b5cf6',
 }
 
-function fmt(s: string) { return s?.replace(/_/g, ' ') ?? '' }
-
 // ── component ─────────────────────────────────────────────────────────────
 
 export default function PlannerConsolePage() {
-  const [officerPage,  setOfficerPage]  = useState<PageResult<OfficerSummary> | null>(null)
-  const [selected,     setSelected]     = useState<OfficerDetail | null>(null)
-  const [counts,       setCounts]       = useState<OfficerCounts | null>(null)
-  const [allSkills,    setAllSkills]    = useState<Skill[]>([])
-  const [stations,     setStations]     = useState<Station[]>([])
+  const [officerPage, setOfficerPage] = useState<PageResult<OfficerSummary> | null>(null)
+  const [selected,    setSelected]    = useState<OfficerDetail | null>(null)
+  const [counts,      setCounts]      = useState<OfficerCounts | null>(null)
+  const [allSkills,   setAllSkills]   = useState<Skill[]>([])
+  const [stations,    setStations]    = useState<Station[]>([])
 
   // filter state
-  const [search,     setSearch]     = useState('')
-  const [rankFilter, setRankFilter] = useState('')
-  const [firearms,   setFirearms]   = useState<'' | 'true' | 'false'>('')
-  const [page,       setPage]       = useState(0)
+  const [search,      setSearch]      = useState('')
+  const [rankFilters, setRankFilters] = useState<string[]>([])
+  const [faFilter,    setFaFilter]    = useState('')
+  const [page,        setPage]        = useState(0)
 
   // edit state
   const [saving,      setSaving]      = useState(false)
@@ -90,12 +75,10 @@ export default function PlannerConsolePage() {
 
   const loadPage = useCallback(() => {
     const params = new URLSearchParams({ page: String(page), size: '25' })
-    if (rankFilter) params.set('rank', rankFilter)
-    if (firearms)   params.set('firearms', firearms)
-    api<PageResult<OfficerSummary>>(`/api/officers?${params}`)
-      .then(setOfficerPage)
-      .catch(() => {})
-  }, [page, rankFilter, firearms])
+    rankFilters.forEach(r => params.append('rank', r))
+    if (faFilter) params.set('firearms', faFilter)
+    api<PageResult<OfficerSummary>>(`/api/officers?${params}`).then(setOfficerPage).catch(() => {})
+  }, [page, rankFilters, faFilter])
 
   useEffect(() => { loadPage() }, [loadPage])
 
@@ -112,10 +95,8 @@ export default function PlannerConsolePage() {
     if (!detail) return
     setSelected(detail)
     setEditFields({
-      rank:          detail.rank,
-      status:        detail.status,
-      defaultMode:   detail.defaultMode,
-      firearms:      detail.firearms,
+      rank: detail.rank, status: detail.status,
+      defaultMode: detail.defaultMode, firearms: detail.firearms,
       homeStationId: detail.homeStationId,
     })
     setSkillToAdd('')
@@ -133,10 +114,7 @@ export default function PlannerConsolePage() {
     if (!selected || !editFields) return
     setSaving(true)
     try {
-      const updated = await api<OfficerDetail>(`/api/officers/${selected.id}`, {
-        method: 'PATCH',
-        body: editFields,
-      })
+      const updated = await api<OfficerDetail>(`/api/officers/${selected.id}`, { method: 'PATCH', body: editFields })
       setSelected(updated)
       loadPage()
       showFlash('Officer saved.')
@@ -148,15 +126,11 @@ export default function PlannerConsolePage() {
     if (!selected || !skillToAdd) return
     setSaving(true)
     try {
-      const updated = await api<OfficerDetail>(
-        `/api/officers/${selected.id}/skills/${skillToAdd}`, { method: 'POST' }
-      )
+      const updated = await api<OfficerDetail>(`/api/officers/${selected.id}/skills/${skillToAdd}`, { method: 'POST' })
       setSelected(updated)
       setEditFields(f => f ? { ...f, firearms: updated.firearms } : f)
-      setSkillToAdd('')
-      setAddingSkill(false)
-      loadPage()
-      showFlash('Skill added.')
+      setSkillToAdd(''); setAddingSkill(false)
+      loadPage(); showFlash('Skill added.')
     } catch { showFlash('Add skill failed.', false) }
     finally { setSaving(false) }
   }
@@ -165,18 +139,15 @@ export default function PlannerConsolePage() {
     if (!selected) return
     setSaving(true)
     try {
-      const updated = await api<OfficerDetail>(
-        `/api/officers/${selected.id}/skills/${code}`, { method: 'DELETE' }
-      )
+      const updated = await api<OfficerDetail>(`/api/officers/${selected.id}/skills/${code}`, { method: 'DELETE' })
       setSelected(updated)
       setEditFields(f => f ? { ...f, firearms: updated.firearms } : f)
-      loadPage()
-      showFlash('Skill removed.')
+      loadPage(); showFlash('Skill removed.')
     } catch { showFlash('Remove skill failed.', false) }
     finally { setSaving(false) }
   }
 
-  // ── filtered list ──────────────────────────────────────────────────────────
+  // ── derived ───────────────────────────────────────────────────────────────
 
   const officers = officerPage?.content ?? []
   const filtered = search
@@ -188,12 +159,10 @@ export default function PlannerConsolePage() {
       })
     : officers
 
-  const availableSkillsToAdd = allSkills.filter(
-    s => !selected?.skills.some(sk => sk.code === s.code)
-  )
-
-  const stationName = (id: number) =>
-    stations.find(s => s.id === id)?.name ?? `Station ${id}`
+  const availableSkillsToAdd = allSkills.filter(s => !selected?.skills.some(sk => sk.code === s.code))
+  const skillOpts: SelectOption[] = availableSkillsToAdd.map(s => ({ value: s.code, label: s.name }))
+  const stationOpts: SelectOption[] = stations.map(s => ({ value: String(s.id), label: s.name }))
+  const stationName = (id: number) => stations.find(s => s.id === id)?.name ?? `Station ${id}`
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -252,40 +221,33 @@ export default function PlannerConsolePage() {
                 onChange={e => setSearch(e.target.value)}
                 style={{
                   padding: '7px 10px', borderRadius: 8,
-                  background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
-                  color: 'inherit', fontSize: '0.82rem', outline: 'none',
+                  background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
+                  color: '#e2e8f0', fontSize: '0.82rem', outline: 'none',
                 }}
               />
               <div style={{ display: 'flex', gap: 6 }}>
-                <select
-                  value={rankFilter}
-                  onChange={e => { setRankFilter(e.target.value); setPage(0) }}
-                  style={{
-                    flex: 1, padding: '6px 8px', borderRadius: 8,
-                    background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
-                    color: 'inherit', fontSize: '0.78rem', outline: 'none', cursor: 'pointer',
-                  }}
-                >
-                  <option value="">All ranks</option>
-                  {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                <select
-                  value={firearms}
-                  onChange={e => { setFirearms(e.target.value as '' | 'true' | 'false'); setPage(0) }}
-                  style={{
-                    flex: 1, padding: '6px 8px', borderRadius: 8,
-                    background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
-                    color: 'inherit', fontSize: '0.78rem', outline: 'none', cursor: 'pointer',
-                  }}
-                >
-                  <option value="">All</option>
-                  <option value="true">Firearms</option>
-                  <option value="false">Non-firearms</option>
-                </select>
+                <div style={{ flex: 1 }}>
+                  <DarkMultiSelect
+                    value={rankFilters}
+                    onChange={v => { setRankFilters(v); setPage(0) }}
+                    options={RANK_OPTS}
+                    placeholder="All ranks"
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <DarkSelect
+                    value={faFilter}
+                    onChange={v => { setFaFilter(v); setPage(0) }}
+                    options={FA_OPTS}
+                    placeholder="All"
+                    nullable
+                    nullLabel="All officers"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* List */}
+            {/* Officer list */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {filtered.length === 0 && (
                 <p className="faint" style={{ fontSize: '0.82rem' }}>No officers found.</p>
@@ -296,8 +258,7 @@ export default function PlannerConsolePage() {
                   onClick={() => selectOfficer(o)}
                   style={{
                     padding: '9px 11px', borderRadius: 9, marginBottom: 4, cursor: 'pointer',
-                    background: selected?.id === o.id
-                      ? 'rgba(47,107,255,0.12)' : 'rgba(255,255,255,0.03)',
+                    background: selected?.id === o.id ? 'rgba(47,107,255,0.12)' : 'rgba(255,255,255,0.03)',
                     border: `1px solid ${selected?.id === o.id ? 'rgba(47,107,255,0.5)' : 'var(--hair)'}`,
                     transition: 'all 0.12s',
                   }}
@@ -308,9 +269,7 @@ export default function PlannerConsolePage() {
                       background: 'rgba(255,255,255,0.08)', color: 'var(--text-dim)',
                       fontFamily: 'var(--mono)',
                     }}>{o.rank}</span>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                      {o.forename} {o.surname}
-                    </span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>{o.forename} {o.surname}</span>
                     {o.firearms && (
                       <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: '#ef4444', fontWeight: 700 }}>ARV</span>
                     )}
@@ -320,9 +279,8 @@ export default function PlannerConsolePage() {
                     <span style={{
                       fontSize: '0.66rem', fontWeight: 600,
                       color: o.status === 'ON_DUTY' || o.status === 'AVAILABLE' ? '#22c55e'
-                           : o.status === 'ON_SCENE' ? '#06b6d4'
-                           : 'var(--text-faint)',
-                    }}>{fmt(o.status)}</span>
+                           : o.status === 'ON_SCENE' ? '#06b6d4' : 'var(--text-faint)',
+                    }}>{o.status.replace(/_/g, ' ')}</span>
                   </div>
                 </div>
               ))}
@@ -331,26 +289,16 @@ export default function PlannerConsolePage() {
             {/* Pagination */}
             {officerPage && officerPage.totalPages > 1 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, flexShrink: 0 }}>
-                <button
-                  className="btn"
-                  disabled={page === 0}
-                  onClick={() => setPage(p => p - 1)}
-                  style={{ fontSize: '0.76rem', padding: '5px 12px' }}
-                >← Prev</button>
-                <span className="faint" style={{ fontSize: '0.74rem' }}>
-                  {page + 1} / {officerPage.totalPages}
-                </span>
-                <button
-                  className="btn"
-                  disabled={page >= officerPage.totalPages - 1}
-                  onClick={() => setPage(p => p + 1)}
-                  style={{ fontSize: '0.76rem', padding: '5px 12px' }}
-                >Next →</button>
+                <button className="btn" disabled={page === 0} onClick={() => setPage(p => p - 1)}
+                  style={{ fontSize: '0.76rem', padding: '5px 12px' }}>← Prev</button>
+                <span className="faint" style={{ fontSize: '0.74rem' }}>{page + 1} / {officerPage.totalPages}</span>
+                <button className="btn" disabled={page >= officerPage.totalPages - 1} onClick={() => setPage(p => p + 1)}
+                  style={{ fontSize: '0.76rem', padding: '5px 12px' }}>Next →</button>
               </div>
             )}
           </div>
 
-          {/* ── RIGHT: officer detail + skill editor ── */}
+          {/* ── RIGHT: officer detail ── */}
           <div className="panel" style={{ padding: 20, overflowY: 'auto' }}>
             {!selected ? (
               <div style={{ textAlign: 'center', paddingTop: 60, color: 'var(--text-faint)' }}>
@@ -374,57 +322,46 @@ export default function PlannerConsolePage() {
                       </div>
                     )}
                   </div>
-                  <button
-                    className="btn"
-                    onClick={() => { setSelected(null); setEditFields(null) }}
-                    style={{ fontSize: '0.78rem', padding: '5px 12px' }}
-                  >✕ Close</button>
+                  <button className="btn" onClick={() => { setSelected(null); setEditFields(null) }}
+                    style={{ fontSize: '0.78rem', padding: '5px 12px' }}>✕ Close</button>
                 </div>
 
-                {/* Edit fields */}
+                {/* Edit fields — using dark custom dropdowns */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
                   <div>
-                    <label style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4 }}>Rank</label>
-                    <select
+                    <label style={labelStyle}>Rank</label>
+                    <DarkSelect
                       value={editFields.rank}
-                      onChange={e => setEditFields(f => f ? { ...f, rank: e.target.value } : f)}
-                      style={selectStyle}
-                    >
-                      {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                      onChange={v => setEditFields(f => f ? { ...f, rank: v } : f)}
+                      options={RANK_OPTS}
+                    />
                   </div>
                   <div>
-                    <label style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4 }}>Status</label>
-                    <select
+                    <label style={labelStyle}>Status</label>
+                    <DarkSelect
                       value={editFields.status}
-                      onChange={e => setEditFields(f => f ? { ...f, status: e.target.value } : f)}
-                      style={selectStyle}
-                    >
-                      {STATUSES.map(s => <option key={s} value={s}>{fmt(s)}</option>)}
-                    </select>
+                      onChange={v => setEditFields(f => f ? { ...f, status: v } : f)}
+                      options={STATUS_OPTS}
+                    />
                   </div>
                   <div>
-                    <label style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4 }}>Default Mode</label>
-                    <select
+                    <label style={labelStyle}>Default Mode</label>
+                    <DarkSelect
                       value={editFields.defaultMode}
-                      onChange={e => setEditFields(f => f ? { ...f, defaultMode: e.target.value } : f)}
-                      style={selectStyle}
-                    >
-                      {MODES.map(m => <option key={m} value={m}>{fmt(m)}</option>)}
-                    </select>
+                      onChange={v => setEditFields(f => f ? { ...f, defaultMode: v } : f)}
+                      options={MODE_OPTS}
+                    />
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4 }}>Home Station</label>
-                    <select
-                      value={editFields.homeStationId}
-                      onChange={e => setEditFields(f => f ? { ...f, homeStationId: Number(e.target.value) } : f)}
-                      style={selectStyle}
-                    >
-                      <option value={0}>— None —</option>
-                      {stations.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
+                  <div style={{ gridColumn: '1 / 3' }}>
+                    <label style={labelStyle}>Home Station</label>
+                    <DarkSelect
+                      value={editFields.homeStationId > 0 ? String(editFields.homeStationId) : ''}
+                      onChange={v => setEditFields(f => f ? { ...f, homeStationId: v ? Number(v) : 0 } : f)}
+                      options={stationOpts}
+                      searchable
+                      nullable
+                      nullLabel="— None —"
+                    />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 18 }}>
                     <input
@@ -440,12 +377,7 @@ export default function PlannerConsolePage() {
                   </div>
                 </div>
 
-                <button
-                  className="btn primary"
-                  disabled={saving}
-                  onClick={saveOfficer}
-                  style={{ marginBottom: 24 }}
-                >
+                <button className="btn primary" disabled={saving} onClick={saveOfficer} style={{ marginBottom: 24 }}>
                   {saving ? 'Saving…' : 'Save Changes'}
                 </button>
 
@@ -453,76 +385,62 @@ export default function PlannerConsolePage() {
 
                 {/* Skills */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div className="panel-title" style={{ margin: 0 }}>Skills & Qualifications</div>
-                  {!addingSkill && availableSkillsToAdd.length > 0 && (
-                    <button
-                      className="btn"
-                      onClick={() => setAddingSkill(true)}
-                      style={{ fontSize: '0.76rem', padding: '5px 12px' }}
-                    >+ Add skill</button>
+                  <div className="panel-title" style={{ margin: 0 }}>Skills &amp; Qualifications</div>
+                  {!addingSkill && skillOpts.length > 0 && (
+                    <button className="btn" onClick={() => setAddingSkill(true)}
+                      style={{ fontSize: '0.76rem', padding: '5px 12px' }}>+ Add skill</button>
                   )}
                 </div>
 
                 {/* Add skill row */}
                 {addingSkill && (
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
-                    <select
-                      value={skillToAdd}
-                      onChange={e => setSkillToAdd(e.target.value)}
-                      style={{ ...selectStyle, flex: 1 }}
-                    >
-                      <option value="">— Select skill —</option>
-                      {availableSkillsToAdd.map(s => (
-                        <option key={s.code} value={s.code}>{s.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="btn primary"
-                      disabled={!skillToAdd || saving}
-                      onClick={addSkill}
-                      style={{ fontSize: '0.78rem', padding: '6px 14px', whiteSpace: 'nowrap' }}
-                    >Add</button>
-                    <button
-                      className="btn"
-                      onClick={() => { setAddingSkill(false); setSkillToAdd('') }}
-                      style={{ fontSize: '0.78rem', padding: '6px 10px' }}
-                    >Cancel</button>
+                    <div style={{ flex: 1 }}>
+                      <DarkSelect
+                        value={skillToAdd}
+                        onChange={setSkillToAdd}
+                        options={skillOpts}
+                        placeholder="— Select skill —"
+                        searchable
+                        nullable
+                        nullLabel="— Select skill —"
+                      />
+                    </div>
+                    <button className="btn primary" disabled={!skillToAdd || saving} onClick={addSkill}
+                      style={{ fontSize: '0.78rem', padding: '7px 14px', whiteSpace: 'nowrap' }}>Add</button>
+                    <button className="btn" onClick={() => { setAddingSkill(false); setSkillToAdd('') }}
+                      style={{ fontSize: '0.78rem', padding: '7px 10px' }}>Cancel</button>
                   </div>
                 )}
 
-                {/* Current skills */}
+                {/* Skill chips */}
                 {selected.skills.length === 0 ? (
                   <p className="faint" style={{ fontSize: '0.82rem' }}>No skills recorded.</p>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {selected.skills.map(sk => (
-                      <div key={sk.code} style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '6px 10px 6px 12px', borderRadius: 20,
-                        background: (CATEGORY_COLORS[sk.category] ?? '#6b7280') + '18',
-                        border: `1px solid ${(CATEGORY_COLORS[sk.category] ?? '#6b7280')}55`,
-                      }}>
-                        <span style={{
-                          fontSize: '0.78rem', fontWeight: 600,
-                          color: CATEGORY_COLORS[sk.category] ?? '#6b7280',
-                        }}>{sk.name}</span>
-                        <span style={{
-                          fontSize: '0.62rem', color: 'var(--text-faint)',
-                          fontFamily: 'var(--mono)',
-                        }}>{sk.category}</span>
-                        <button
-                          onClick={() => removeSkill(sk.code)}
-                          disabled={saving}
-                          title={`Remove ${sk.name}`}
-                          style={{
-                            marginLeft: 2, background: 'none', border: 'none',
-                            cursor: 'pointer', color: 'var(--text-faint)',
-                            fontSize: '0.9rem', lineHeight: 1, padding: '0 2px',
-                            display: 'flex', alignItems: 'center',
-                          }}
-                        >✕</button>
-                      </div>
-                    ))}
+                    {selected.skills.map(sk => {
+                      const col = CATEGORY_COLORS[sk.category] ?? '#6b7280'
+                      return (
+                        <div key={sk.code} style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '6px 10px 6px 12px', borderRadius: 20,
+                          background: col + '18', border: `1px solid ${col}55`,
+                        }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: col }}>{sk.name}</span>
+                          <span className="mono faint" style={{ fontSize: '0.62rem' }}>{sk.category}</span>
+                          <button
+                            onClick={() => removeSkill(sk.code)}
+                            disabled={saving}
+                            title={`Remove ${sk.name}`}
+                            style={{
+                              marginLeft: 2, background: 'none', border: 'none', cursor: 'pointer',
+                              color: 'var(--text-faint)', fontSize: '0.9rem', lineHeight: 1,
+                              padding: '0 2px', display: 'flex', alignItems: 'center',
+                            }}
+                          >✕</button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </>
@@ -535,8 +453,6 @@ export default function PlannerConsolePage() {
   )
 }
 
-const selectStyle: React.CSSProperties = {
-  width: '100%', padding: '7px 10px', borderRadius: 8,
-  background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
-  color: 'inherit', fontSize: '0.82rem', outline: 'none', cursor: 'pointer',
+const labelStyle: React.CSSProperties = {
+  fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4,
 }
