@@ -13,12 +13,13 @@ export interface ResourcePin {
 }
 
 interface Props {
-  queued:    QueuePin[]
-  active:    ActivePin | null
-  incidents: IncidentPin[]
-  resources?: ResourcePin[]
-  selectedPos?: [number, number] | null
-  radiusM?: number
+  queued:         QueuePin[]
+  active:         ActivePin | null
+  incidents:      IncidentPin[]
+  resources?:     ResourcePin[]
+  routeResources?: ResourcePin[]
+  selectedPos?:   [number, number] | null
+  radiusM?:       number
 }
 
 const PRIO: Record<number, string> = {
@@ -79,8 +80,9 @@ function FlyToActive({ pos }: { pos: [number, number] | null }) {
 
 export default function IncidentMap({
   queued, active, incidents,
-  resources = [], selectedPos, radiusM = 1000,
+  resources = [], routeResources, selectedPos, radiusM = 1000,
 }: Props) {
+  const routePins = routeResources ?? resources
   const activePos: [number, number] | null = active ? [active.lat, active.lng] : null
 
   return (
@@ -106,8 +108,8 @@ export default function IncidentMap({
         />
       )}
 
-      {/* Route lines from resources to selected incident */}
-      {selectedPos && resources.map(r => (
+      {/* Route lines from selected-incident resources only */}
+      {selectedPos && routePins.map(r => (
         <Polyline
           key={`route-${r.id}`}
           positions={[[r.lat, r.lng], selectedPos]}

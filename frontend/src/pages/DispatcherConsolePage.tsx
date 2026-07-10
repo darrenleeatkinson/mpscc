@@ -335,6 +335,7 @@ export default function DispatcherConsolePage() {
             active={activePin}
             incidents={incidentPins}
             resources={resourcePins}
+            routeResources={routeResources}
             selectedPos={selectedPos}
             radiusM={radiusM}
           />
