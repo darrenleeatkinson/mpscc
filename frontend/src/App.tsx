@@ -2,9 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
-import PersonaPlaceholder from './pages/PersonaPlaceholder'
 import ResponderConsolePage from './pages/ResponderConsolePage'
 import DispatcherConsolePage from './pages/DispatcherConsolePage'
+import PlannerConsolePage from './pages/PlannerConsolePage'
 
 export default function App() {
   return (
@@ -40,7 +40,7 @@ export default function App() {
         path="/planner"
         element={
           <RequireAuth role="PLANNER">
-            <PersonaPlaceholder personaKey="planner" />
+            <PlannerConsolePage />
           </RequireAuth>
         }
       />

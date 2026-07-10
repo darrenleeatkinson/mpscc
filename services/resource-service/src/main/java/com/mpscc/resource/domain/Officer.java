@@ -43,4 +43,10 @@ public class Officer {
     public String getDefaultMode() { return defaultMode; }
     public boolean isFirearms() { return firearms; }
     public String getStatus() { return status; }
+
+    public void setRank(String rank) { this.rank = rank; }
+    public void setHomeStationId(Long homeStationId) { this.homeStationId = homeStationId; }
+    public void setDefaultMode(String defaultMode) { this.defaultMode = defaultMode; }
+    public void setFirearms(boolean firearms) { this.firearms = firearms; }
+    public void setStatus(String status) { this.status = status; }
 }
