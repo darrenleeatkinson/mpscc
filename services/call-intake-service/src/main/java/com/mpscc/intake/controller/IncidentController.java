@@ -41,6 +41,8 @@ public class IncidentController {
             m.put("status", inc.getStatus());
             m.put("crimeType", inc.getCrimeType());
             m.put("createdAt", inc.getCreatedAt());
+            m.put("latitude", inc.getLatitude());
+            m.put("longitude", inc.getLongitude());
             return m;
         }).toList();
     }

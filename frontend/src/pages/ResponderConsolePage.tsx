@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import TopBar from '../components/TopBar'
+import IncidentMap from '../components/IncidentMap'
+import type { QueuePin, ActivePin, IncidentPin } from '../components/IncidentMap'
 import { api, ApiError } from '../api/client'
 
 interface QueueStatus {
@@ -11,6 +13,8 @@ interface CallSnapshot {
   phone: string
   postcode: string
   tsn: number
+  latitude: number
+  longitude: number
 }
 interface ActiveCall {
   callId: string
@@ -66,6 +70,16 @@ interface CreateIncidentReq {
   peopleAtRisk: number
   priority: number
 }
+interface IncidentRecentItem {
+  id: number
+  reference: string
+  priority: number
+  status: string
+  crimeType: string
+  createdAt: string
+  latitude: number | null
+  longitude: number | null
+}
 
 const PRIORITY_COLORS: Record<number, string> = {
   1: '#ef4444',
@@ -89,8 +103,8 @@ const DEFAULT_FORM: IncidentForm = {
 type BoolKey = 'injuries' | 'weapons' | 'suspectsOnScene'
 
 const TOGGLE_FIELDS: { key: BoolKey; label: string }[] = [
-  { key: 'injuries', label: 'Injuries?' },
-  { key: 'weapons', label: 'Weapon?' },
+  { key: 'injuries',        label: 'Injuries?' },
+  { key: 'weapons',         label: 'Weapon?' },
   { key: 'suspectsOnScene', label: 'Suspects on scene?' },
 ]
 
@@ -99,20 +113,29 @@ function formatCrimeType(t: string): string {
 }
 
 export default function ResponderConsolePage() {
-  const [queue, setQueue] = useState<QueueStatus>({ queued: 0, snapshot: [] })
+  const [queue,      setQueue]      = useState<QueueStatus>({ queued: 0, snapshot: [] })
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
   const [assessment, setAssessment] = useState<Assessment | null>(null)
-  const [form, setForm] = useState<IncidentForm>(DEFAULT_FORM)
-  const [answering, setAnswering] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [created, setCreated] = useState<CreatedIncident | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [incidents,  setIncidents]  = useState<IncidentRecentItem[]>([])
+  const [form,       setForm]       = useState<IncidentForm>(DEFAULT_FORM)
+  const [answering,  setAnswering]  = useState(false)
+  const [creating,   setCreating]   = useState(false)
+  const [created,    setCreated]    = useState<CreatedIncident | null>(null)
+  const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
 
   useEffect(() => {
     const poll = () =>
       api<QueueStatus>('/api/intake/queue').then(setQueue).catch(() => {})
     poll()
     const id = setInterval(poll, 3000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const poll = () =>
+      api<IncidentRecentItem[]>('/api/incidents/recent').then(setIncidents).catch(() => {})
+    poll()
+    const id = setInterval(poll, 10_000)
     return () => clearInterval(id)
   }, [])
 
@@ -125,11 +148,11 @@ export default function ResponderConsolePage() {
     if (!assessment) return
     setForm(f => ({
       ...f,
-      injuries: assessment.injuries,
-      weapons: assessment.weapons,
+      injuries:        assessment.injuries,
+      weapons:         assessment.weapons,
       suspectsOnScene: assessment.suspectsOnScene,
-      peopleAtRisk: assessment.peopleAtRisk,
-      priority: assessment.suggestedPriority,
+      peopleAtRisk:    assessment.peopleAtRisk,
+      priority:        assessment.suggestedPriority,
     }))
   }, [assessment])
 
@@ -163,20 +186,20 @@ export default function ResponderConsolePage() {
     setErrorMsg(null)
     try {
       const req: CreateIncidentReq = {
-        callId: activeCall.callId,
-        callerPhone: activeCall.phone,
-        callerName: form.callerName,
-        address: form.address,
-        postcode: form.postcode,
-        latitude: activeCall.latitude,
-        longitude: activeCall.longitude,
-        crimeType: assessment.crimeType,
+        callId:           activeCall.callId,
+        callerPhone:      activeCall.phone,
+        callerName:       form.callerName,
+        address:          form.address,
+        postcode:         form.postcode,
+        latitude:         activeCall.latitude,
+        longitude:        activeCall.longitude,
+        crimeType:        assessment.crimeType,
         crimeDescription: assessment.description,
-        injuries: form.injuries,
-        weapons: form.weapons,
-        suspectsOnScene: form.suspectsOnScene,
-        peopleAtRisk: form.peopleAtRisk,
-        priority: form.priority,
+        injuries:         form.injuries,
+        weapons:          form.weapons,
+        suspectsOnScene:  form.suspectsOnScene,
+        peopleAtRisk:     form.peopleAtRisk,
+        priority:         form.priority,
       }
       const inc = await api<CreatedIncident>('/api/incidents', { method: 'POST', body: req })
       setCreated(inc)
@@ -190,10 +213,35 @@ export default function ResponderConsolePage() {
     }
   }
 
-  const queueFill = Math.min((queue.queued / 60) * 100, 100)
-  const queueColor =
-    queue.queued > 40 ? 'var(--p1)' : queue.queued > 20 ? 'var(--p2)' : '#22c55e'
-  const prioColor = assessment
+  // Map pin data
+  const queuePins: QueuePin[] = queue.snapshot.map(c => ({
+    callId: c.callId, lat: c.latitude, lng: c.longitude,
+    phone: c.phone, postcode: c.postcode,
+  }))
+
+  const activePin: ActivePin | null = activeCall ? {
+    callId: activeCall.callId,
+    lat:    activeCall.latitude,
+    lng:    activeCall.longitude,
+    phone:  activeCall.phone,
+    address: activeCall.address,
+  } : null
+
+  const incidentPins: IncidentPin[] = incidents
+    .filter(i => i.latitude != null && i.longitude != null)
+    .map(i => ({
+      id:        i.id,
+      lat:       i.latitude!,
+      lng:       i.longitude!,
+      reference: i.reference,
+      priority:  i.priority,
+      crimeType: i.crimeType,
+      status:    i.status,
+    }))
+
+  const queueFill  = Math.min((queue.queued / 60) * 100, 100)
+  const queueColor = queue.queued > 40 ? 'var(--p1)' : queue.queued > 20 ? 'var(--p2)' : '#22c55e'
+  const prioColor  = assessment
     ? (PRIORITY_COLORS[assessment.suggestedPriority] ?? 'var(--text)')
     : 'var(--text)'
 
@@ -205,7 +253,7 @@ export default function ResponderConsolePage() {
         <div
           className="fade-in"
           style={{
-            position: 'fixed', top: 70, right: 24, zIndex: 100,
+            position: 'fixed', top: 70, right: 24, zIndex: 1000,
             background: 'linear-gradient(135deg,rgba(34,197,94,.18),rgba(34,197,94,.08))',
             border: '1px solid rgba(34,197,94,.45)',
             borderRadius: 12, padding: '14px 20px',
@@ -223,7 +271,7 @@ export default function ResponderConsolePage() {
         style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: '260px 1fr 360px',
+          gridTemplateColumns: '260px 1fr 380px',
           gap: 14,
           padding: 14,
           maxHeight: 'calc(100vh - 57px)',
@@ -237,10 +285,7 @@ export default function ResponderConsolePage() {
 
             <div style={{ marginBottom: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <span
-                  className="tnum"
-                  style={{ fontSize: '2.2rem', fontWeight: 700, lineHeight: 1 }}
-                >
+                <span className="tnum" style={{ fontSize: '2.2rem', fontWeight: 700, lineHeight: 1 }}>
                   {queue.queued}
                 </span>
                 <span className="faint" style={{ fontSize: '0.75rem' }}>waiting</span>
@@ -248,8 +293,7 @@ export default function ResponderConsolePage() {
               <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                 <div
                   style={{
-                    width: `${queueFill}%`,
-                    height: '100%',
+                    width: `${queueFill}%`, height: '100%',
                     background: queueColor,
                     transition: 'width 0.6s ease, background 0.6s ease',
                   }}
@@ -283,100 +327,113 @@ export default function ResponderConsolePage() {
                       background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
                     }}
                   >
-                    <div className="mono" style={{ fontSize: '0.8rem' }}>
-                      {c.phone.slice(-8)}
-                    </div>
+                    <div className="mono" style={{ fontSize: '0.8rem' }}>{c.phone.slice(-8)}</div>
                     <div className="faint" style={{ fontSize: '0.74rem' }}>{c.postcode}</div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Map legend */}
+          <div className="panel" style={{ padding: 12 }}>
+            <div className="panel-title" style={{ marginBottom: 8 }}>Map legend</div>
+            {[
+              { color: '#2f6bff', label: 'Active call' },
+              { color: '#f97316', label: 'Queued calls' },
+              { color: '#ef4444', label: 'P1 incident' },
+              { color: '#f59e0b', label: 'P2 incident' },
+              { color: '#eab308', label: 'P3 incident' },
+              { color: '#3b82f6', label: 'P4 incident' },
+              { color: '#6b7280', label: 'P5 incident' },
+            ].map(({ color, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, border: '1.5px solid white', flexShrink: 0 }} />
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)' }}>{label}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* ── MIDDLE: Active call ── */}
-        <div className="panel" style={{ padding: 20, overflowY: 'auto' }}>
-          <div className="panel-title">Active Call</div>
-
-          {!activeCall ? (
-            <div
-              style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', height: '80%', gap: 14,
-              }}
-            >
-              <span style={{ fontSize: '3rem', opacity: 0.2 }}>☎</span>
-              <p className="dim" style={{ textAlign: 'center', margin: 0, fontSize: '0.88rem', maxWidth: 280 }}>
-                No active call. Press <strong>Answer Next</strong> to take the next call from the queue.
-              </p>
-            </div>
-          ) : (
-            <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div
-                style={{
-                  background: 'rgba(47,107,255,0.08)',
-                  border: '1px solid rgba(47,107,255,0.3)',
-                  borderRadius: 10, padding: '14px 18px',
-                }}
-              >
-                <div className="mono" style={{ fontSize: '1.15rem', fontWeight: 700 }}>
-                  {activeCall.phone}
-                </div>
-                <div className="dim" style={{ fontSize: '0.8rem', marginTop: 5 }}>
-                  Mobile fix · ±{activeCall.accuracyMeters}m
-                </div>
-                <div className="faint" style={{ fontSize: '0.75rem', marginTop: 2 }}>
-                  {activeCall.latitude.toFixed(5)}, {activeCall.longitude.toFixed(5)}
-                </div>
-              </div>
-
-              <div>
-                <label className="label" htmlFor="callerName">Caller name</label>
-                <input
-                  id="callerName"
-                  className="input"
-                  placeholder="Unknown"
-                  autoFocus
-                  value={form.callerName}
-                  onChange={(e) => setForm(f => ({ ...f, callerName: e.target.value }))}
-                />
-              </div>
-
-              <div>
-                <label className="label" htmlFor="address">Address</label>
-                <input
-                  id="address"
-                  className="input"
-                  value={form.address}
-                  onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
-                />
-              </div>
-
-              <div>
-                <label className="label" htmlFor="postcode">Postcode</label>
-                <input
-                  id="postcode"
-                  className="input"
-                  value={form.postcode}
-                  style={{ textTransform: 'uppercase' }}
-                  onChange={(e) => setForm(f => ({ ...f, postcode: e.target.value.toUpperCase() }))}
-                />
-              </div>
-            </div>
-          )}
+        {/* ── MIDDLE: Incident Map ── */}
+        <div className="panel" style={{ overflow: 'hidden', padding: 0, position: 'relative' }}>
+          <IncidentMap queued={queuePins} active={activePin} incidents={incidentPins} />
         </div>
 
-        {/* ── RIGHT: Assessment + Create ── */}
+        {/* ── RIGHT: Active Call + Assessment + Create ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+
+          {/* Active Call */}
+          <div className="panel" style={{ padding: 16 }}>
+            <div className="panel-title">Active Call</div>
+
+            {!activeCall ? (
+              <p className="faint" style={{ fontSize: '0.84rem', margin: '10px 0 0' }}>
+                Press <strong>Answer Next</strong> to take the next call from the queue.
+              </p>
+            ) : (
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div
+                  style={{
+                    background: 'rgba(47,107,255,0.08)',
+                    border: '1px solid rgba(47,107,255,0.3)',
+                    borderRadius: 8, padding: '10px 14px',
+                  }}
+                >
+                  <div className="mono" style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                    {activeCall.phone}
+                  </div>
+                  <div className="faint" style={{ fontSize: '0.72rem', marginTop: 3 }}>
+                    ±{activeCall.accuracyMeters}m · {activeCall.latitude.toFixed(4)}, {activeCall.longitude.toFixed(4)}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label" htmlFor="callerName">Caller name</label>
+                  <input
+                    id="callerName"
+                    className="input"
+                    placeholder="Unknown"
+                    autoFocus
+                    value={form.callerName}
+                    onChange={(e) => setForm(f => ({ ...f, callerName: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="label" htmlFor="address">Address</label>
+                  <input
+                    id="address"
+                    className="input"
+                    value={form.address}
+                    onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="label" htmlFor="postcode">Postcode</label>
+                  <input
+                    id="postcode"
+                    className="input"
+                    value={form.postcode}
+                    style={{ textTransform: 'uppercase' }}
+                    onChange={(e) => setForm(f => ({ ...f, postcode: e.target.value.toUpperCase() }))}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Assessment */}
           <div className="panel" style={{ padding: 16, flex: 1 }}>
             <div className="panel-title">Live Assessment</div>
 
             {!assessment ? (
-              <p className="faint" style={{ fontSize: '0.85rem', marginTop: 20 }}>
+              <p className="faint" style={{ fontSize: '0.85rem', marginTop: 10 }}>
                 Assessment appears once a call is answered.
               </p>
             ) : (
-              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ fontWeight: 700, fontSize: '1rem', letterSpacing: '0.04em', color: prioColor }}>
                   {formatCrimeType(assessment.crimeType)}
                 </div>
@@ -385,7 +442,7 @@ export default function ResponderConsolePage() {
                   {assessment.description}
                 </p>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {TOGGLE_FIELDS.map(({ key, label }) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>{label}</span>
@@ -427,7 +484,6 @@ export default function ResponderConsolePage() {
                   </div>
                 </div>
 
-                {/* Priority picker */}
                 <div>
                   <div className="panel-title" style={{ marginBottom: 8 }}>Priority</div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -437,11 +493,9 @@ export default function ResponderConsolePage() {
                         type="button"
                         onClick={() => setForm(f => ({ ...f, priority: p }))}
                         style={{
-                          flex: 1, padding: '9px 0', borderRadius: 8,
+                          flex: 1, padding: '8px 0', borderRadius: 8,
                           border: `2px solid ${form.priority === p ? PRIORITY_COLORS[p] : 'var(--hair)'}`,
-                          background: form.priority === p
-                            ? `${PRIORITY_COLORS[p]}22`
-                            : 'transparent',
+                          background: form.priority === p ? `${PRIORITY_COLORS[p]}22` : 'transparent',
                           color: form.priority === p ? PRIORITY_COLORS[p] : 'var(--text-faint)',
                           fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
                           transition: 'all 0.15s',
