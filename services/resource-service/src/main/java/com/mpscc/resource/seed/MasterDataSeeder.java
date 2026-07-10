@@ -300,11 +300,13 @@ public class MasterDataSeeder implements CommandLineRunner {
     };
 
     private String syntheticReg(int seq) {
-        String area = AREA_CODES[seq % AREA_CODES.length];
-        String year = YEAR_CODES[(seq / AREA_CODES.length) % YEAR_CODES.length];
-        String l1   = REG_LETTERS[(seq / 100) % REG_LETTERS.length];
-        String l2   = REG_LETTERS[(seq / 10)  % REG_LETTERS.length];
-        String l3   = REG_LETTERS[seq          % REG_LETTERS.length];
-        return area + year + " " + l1 + l2 + l3;
+        // Mixed-radix bijection: (22 areas) × (8 years) × (22³ letters) = 4.2M unique plates
+        int n  = seq - 1;
+        int l3 = n % 22; n /= 22;
+        int l2 = n % 22; n /= 22;
+        int l1 = n % 22; n /= 22;
+        int yr = n % 8;  n /= 8;
+        int ar = n % 22;
+        return AREA_CODES[ar] + YEAR_CODES[yr] + " " + REG_LETTERS[l1] + REG_LETTERS[l2] + REG_LETTERS[l3];
     }
 }
