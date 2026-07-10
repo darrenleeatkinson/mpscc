@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { api } from '../api/client'
 
 // ── types ─────────────────────────────────────────────────────────────────
