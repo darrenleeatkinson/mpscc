@@ -32,6 +32,7 @@
         <module>services/resource-service</module>
         <module>services/call-intake-service</module>
         <module>services/call-simulator-service</module>
+        <module>services/dispatch-service</module>
     </modules>
 
     <dependencyManagement>

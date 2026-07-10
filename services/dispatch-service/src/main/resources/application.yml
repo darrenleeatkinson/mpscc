@@ -1,0 +1,23 @@
+server:
+  port: 8086
+spring:
+  application:
+    name: dispatch-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/mpscc}
+    username: ${SPRING_DATASOURCE_USERNAME:mpscc}
+    password: ${SPRING_DATASOURCE_PASSWORD:mpscc_dev_change_me}
+  flyway:
+    enabled: true
+    table: flyway_dispatch_history
+    baseline-on-migrate: true
+    baseline-version: 0
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

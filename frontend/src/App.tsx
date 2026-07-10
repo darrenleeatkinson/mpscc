@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import PersonaPlaceholder from './pages/PersonaPlaceholder'
 import ResponderConsolePage from './pages/ResponderConsolePage'
+import DispatcherConsolePage from './pages/DispatcherConsolePage'
 
 export default function App() {
   return (
@@ -31,7 +32,7 @@ export default function App() {
         path="/dispatch"
         element={
           <RequireAuth role="DISPATCHER">
-            <PersonaPlaceholder personaKey="dispatch" />
+            <DispatcherConsolePage />
           </RequireAuth>
         }
       />

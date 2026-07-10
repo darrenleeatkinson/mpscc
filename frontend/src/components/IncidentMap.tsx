@@ -18,6 +18,13 @@ const PRIO: Record<number, string> = {
   1: '#ef4444', 2: '#f97316', 3: '#eab308', 4: '#3b82f6', 5: '#6b7280',
 }
 
+function incidentColor(i: IncidentPin): string {
+  if (i.status === 'DISPATCHED') return '#22c55e'
+  if (i.status === 'ON_SCENE')   return '#06b6d4'
+  if (i.status === 'RESOLVED')   return '#9ca3af'
+  return PRIO[i.priority] ?? '#6b7280'
+}
+
 function dot(bg: string, size: number, glow = false) {
   const shadow = glow
     ? `box-shadow:0 0 0 5px ${bg}55,0 0 0 10px ${bg}22,0 2px 8px rgba(0,0,0,.5);`
@@ -88,7 +95,7 @@ export default function IncidentMap({ queued, active, incidents }: Props) {
         ))}
 
         {incidents.map(i => (
-          <Marker key={`i-${i.id}`} position={[i.lat, i.lng]} icon={dot(PRIO[i.priority] ?? '#6b7280', 22)}>
+          <Marker key={`i-${i.id}`} position={[i.lat, i.lng]} icon={dot(incidentColor(i), 22)}>
             <Popup>
               <strong style={{ fontFamily: 'monospace' }}>{i.reference}</strong><br />
               {i.crimeType?.replace(/_/g, ' ')}<br />
