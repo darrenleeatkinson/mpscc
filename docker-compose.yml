@@ -1,4 +1,5 @@
 name: mpscc
+# Phase 2: call-intake-service, call-simulator-service, responder console
 
 services:
   # ---------------- infrastructure ----------------
