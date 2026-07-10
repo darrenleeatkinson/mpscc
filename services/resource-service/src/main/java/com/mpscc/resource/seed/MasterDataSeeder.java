@@ -261,8 +261,9 @@ public class MasterDataSeeder implements CommandLineRunner {
 
     private Map<String, Integer> loadSkillIds() {
         Map<String, Integer> map = new HashMap<>();
-        jdbc.query("SELECT id, code FROM skills", rs ->
-                map.put(rs.getString("code"), rs.getInt("id")));
+        jdbc.query("SELECT id, code FROM skills", rs -> {
+            map.put(rs.getString("code"), rs.getInt("id"));
+        });
         return map;
     }
 
