@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import IncidentMap from '../components/IncidentMap'
-import type { IncidentPin, ActivePin, ResourcePin } from '../components/IncidentMap'
+import type { IncidentPin, ActivePin, ResourcePin, MapBounds } from '../components/IncidentMap'
 import { api } from '../api/client'
 
 // ── types ─────────────────────────────────────────────────────────────────
@@ -36,8 +36,9 @@ interface ActiveDispatch {
 interface MovingResource {
   id: string; resourceType: string; ref: string; name: string
   mode: string; lat: number; lon: number
-  targetLat: number; targetLon: number
-  dispatchStatus: string; incidentId: number
+  targetLat: number | null; targetLon: number | null
+  dispatchStatus: string; incidentId: number | null
+  assignedAt: string | null; dispatchCreatedAt: string | null; onSceneAt: string | null
 }
 
 // ── constants ─────────────────────────────────────────────────────────────
@@ -104,8 +105,13 @@ export default function DispatcherConsolePage() {
   const [unit,         setUnit]         = useState<'metric' | 'imperial'>('metric')
   const [loadingRes,   setLoadingRes]   = useState(false)
 
-  const radiusDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const radiusDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [debouncedRadius, setDebouncedRadius] = useState(1000)
+  const mapBoundsRef = useRef<MapBounds>({ latMin: 51.2, lngMin: -0.6, latMax: 51.8, lngMax: 0.4 })
+
+  const handleBoundsChange = useCallback((b: MapBounds) => {
+    mapBoundsRef.current = b
+  }, [])
 
   // Debounce radius slider (200ms) to avoid hammering the API on drag
   useEffect(() => {
@@ -120,8 +126,12 @@ export default function DispatcherConsolePage() {
     api<WaitingIncident[]>('/api/dispatch/incidents/waiting').then(setWaiting).catch(() => {}), [])
   const pollActive  = useCallback(() =>
     api<ActiveDispatch[]>('/api/dispatch').then(setActive).catch(() => {}), [])
-  const pollMoving  = useCallback(() =>
-    api<MovingResource[]>('/api/dispatch/resources/moving').then(setMoving).catch(() => {}), [])
+  const pollMoving  = useCallback(() => {
+    const { latMin, lngMin, latMax, lngMax } = mapBoundsRef.current
+    return api<MovingResource[]>(
+      `/api/dispatch/resources/all?latMin=${latMin}&lngMin=${lngMin}&latMax=${latMax}&lngMax=${lngMax}`
+    ).then(setMoving).catch(() => {})
+  }, [])
 
   useEffect(() => {
     pollWaiting(); pollActive(); pollMoving()
@@ -209,14 +219,19 @@ export default function DispatcherConsolePage() {
     : null
 
   const resourcePins: ResourcePin[] = moving.map(r => ({
-    id:             r.id,
-    lat:            r.lat,
-    lng:            r.lon,
-    mode:           r.mode,
-    ref:            r.ref,
-    name:           r.name,
-    dispatchStatus: r.dispatchStatus,
-    incidentId:     r.incidentId,
+    id:                r.id,
+    lat:               r.lat,
+    lng:               r.lon,
+    mode:              r.mode,
+    ref:               r.ref,
+    name:              r.name,
+    dispatchStatus:    r.dispatchStatus,
+    incidentId:        r.incidentId,
+    targetLat:         r.targetLat  ?? undefined,
+    targetLng:         r.targetLon  ?? undefined,
+    dispatchCreatedAt: r.dispatchCreatedAt,
+    assignedAt:        r.assignedAt,
+    onSceneAt:         r.onSceneAt,
   }))
 
   // Only show route lines for resources going to the selected incident
@@ -338,6 +353,7 @@ export default function DispatcherConsolePage() {
             routeResources={routeResources}
             selectedPos={selectedPos}
             radiusM={radiusM}
+            onBoundsChange={handleBoundsChange}
           />
         </div>
 

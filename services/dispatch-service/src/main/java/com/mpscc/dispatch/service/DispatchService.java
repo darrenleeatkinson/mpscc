@@ -297,7 +297,8 @@ public class DispatchService {
         return jdbc.query("""
                 SELECT dr.id, dr.resource_type, dr.resource_ref, dr.resource_name,
                        dr.mode, dr.current_lat, dr.current_lon, dr.target_lat, dr.target_lon,
-                       d.status AS dispatch_status, d.incident_id
+                       d.status AS dispatch_status, d.incident_id,
+                       dr.assigned_at, d.created_at AS dispatch_created_at, d.on_scene_at
                 FROM dispatch_resources dr
                 JOIN dispatches d ON d.id = dr.dispatch_id
                 WHERE d.status IN ('ACTIVE','ON_SCENE')
@@ -305,19 +306,143 @@ public class DispatchService {
                 """,
                 (rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("id",            "r-" + rs.getLong("id"));
-                    m.put("resourceType",  rs.getString("resource_type"));
-                    m.put("ref",           rs.getString("resource_ref"));
-                    m.put("name",          rs.getString("resource_name"));
-                    m.put("mode",          rs.getString("mode"));
-                    m.put("lat",           rs.getDouble("current_lat"));
-                    m.put("lon",           rs.getDouble("current_lon"));
-                    m.put("targetLat",     rs.getDouble("target_lat"));
-                    m.put("targetLon",     rs.getDouble("target_lon"));
-                    m.put("dispatchStatus",rs.getString("dispatch_status"));
-                    m.put("incidentId",    rs.getLong("incident_id"));
+                    m.put("id",                "r-" + rs.getLong("id"));
+                    m.put("resourceType",      rs.getString("resource_type"));
+                    m.put("ref",               rs.getString("resource_ref"));
+                    m.put("name",              rs.getString("resource_name"));
+                    m.put("mode",              rs.getString("mode"));
+                    m.put("lat",               rs.getDouble("current_lat"));
+                    m.put("lon",               rs.getDouble("current_lon"));
+                    m.put("targetLat",         rs.getDouble("target_lat"));
+                    m.put("targetLon",         rs.getDouble("target_lon"));
+                    m.put("dispatchStatus",    rs.getString("dispatch_status"));
+                    m.put("incidentId",        rs.getLong("incident_id"));
+                    m.put("assignedAt",        rs.getObject("assigned_at", OffsetDateTime.class));
+                    m.put("dispatchCreatedAt", rs.getObject("dispatch_created_at", OffsetDateTime.class));
+                    m.put("onSceneAt",         rs.getObject("on_scene_at", OffsetDateTime.class));
                     return m;
                 });
+    }
+
+    // ── all resources within map bounds (free + dispatched) ───────────────
+
+    public List<Map<String, Object>> allResources(double latMin, double lngMin, double latMax, double lngMax) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        // Free vehicles (AVAILABLE) whose home station is within bounds
+        result.addAll(jdbc.query("""
+                SELECT 'v-' || v.id       AS id,
+                       'VEHICLE'           AS resource_type,
+                       v.identifier        AS resource_ref,
+                       v.type              AS resource_name,
+                       v.type              AS mode,
+                       ST_Y(s.location::geometry) AS lat,
+                       ST_X(s.location::geometry) AS lon
+                FROM vehicles v
+                JOIN stations s ON s.id = v.home_station
+                WHERE v.status = 'AVAILABLE'
+                  AND ST_X(s.location::geometry) BETWEEN ? AND ?
+                  AND ST_Y(s.location::geometry) BETWEEN ? AND ?
+                LIMIT 800
+                """,
+                (rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",                rs.getString("id"));
+                    m.put("resourceType",      rs.getString("resource_type"));
+                    m.put("ref",               rs.getString("resource_ref"));
+                    m.put("name",              rs.getString("resource_name"));
+                    m.put("mode",              rs.getString("mode"));
+                    m.put("lat",               rs.getDouble("lat"));
+                    m.put("lon",               rs.getDouble("lon"));
+                    m.put("targetLat",         null);
+                    m.put("targetLon",         null);
+                    m.put("dispatchStatus",    "FREE");
+                    m.put("incidentId",        null);
+                    m.put("assignedAt",        null);
+                    m.put("dispatchCreatedAt", null);
+                    m.put("onSceneAt",         null);
+                    return m;
+                },
+                lngMin, lngMax, latMin, latMax));
+
+        // Free officers (ON_DUTY) whose home station is within bounds
+        result.addAll(jdbc.query("""
+                SELECT 'o-' || o.id       AS id,
+                       'OFFICER'           AS resource_type,
+                       o.collar_number     AS resource_ref,
+                       o.forename || ' ' || o.surname AS resource_name,
+                       COALESCE(o.default_mode, 'FOOT') AS mode,
+                       ST_Y(s.location::geometry) AS lat,
+                       ST_X(s.location::geometry) AS lon
+                FROM officers o
+                JOIN stations s ON s.id = o.home_station
+                WHERE o.status = 'ON_DUTY'
+                  AND ST_X(s.location::geometry) BETWEEN ? AND ?
+                  AND ST_Y(s.location::geometry) BETWEEN ? AND ?
+                LIMIT 300
+                """,
+                (rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",                rs.getString("id"));
+                    m.put("resourceType",      rs.getString("resource_type"));
+                    m.put("ref",               rs.getString("resource_ref"));
+                    m.put("name",              rs.getString("resource_name"));
+                    m.put("mode",              rs.getString("mode"));
+                    m.put("lat",               rs.getDouble("lat"));
+                    m.put("lon",               rs.getDouble("lon"));
+                    m.put("targetLat",         null);
+                    m.put("targetLon",         null);
+                    m.put("dispatchStatus",    "FREE");
+                    m.put("incidentId",        null);
+                    m.put("assignedAt",        null);
+                    m.put("dispatchCreatedAt", null);
+                    m.put("onSceneAt",         null);
+                    return m;
+                },
+                lngMin, lngMax, latMin, latMax));
+
+        // All dispatched/on-scene resources (no bounds filter — they can be anywhere en route)
+        result.addAll(jdbc.query("""
+                SELECT 'r-' || dr.id      AS id,
+                       dr.resource_type,
+                       dr.resource_ref,
+                       dr.resource_name,
+                       dr.mode,
+                       dr.current_lat     AS lat,
+                       dr.current_lon     AS lon,
+                       dr.target_lat,
+                       dr.target_lon,
+                       d.status           AS dispatch_status,
+                       d.incident_id,
+                       dr.assigned_at,
+                       d.created_at       AS dispatch_created_at,
+                       d.on_scene_at
+                FROM dispatch_resources dr
+                JOIN dispatches d ON d.id = dr.dispatch_id
+                WHERE d.status IN ('ACTIVE','ON_SCENE')
+                  AND dr.current_lat IS NOT NULL
+                """,
+                (rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",                rs.getString("id"));
+                    m.put("resourceType",      rs.getString("resource_type"));
+                    m.put("ref",               rs.getString("resource_ref"));
+                    m.put("name",              rs.getString("resource_name"));
+                    m.put("mode",              rs.getString("mode"));
+                    m.put("lat",               rs.getDouble("lat"));
+                    m.put("lon",               rs.getDouble("lon"));
+                    Object tLat = rs.getObject("target_lat"); Object tLon = rs.getObject("target_lon");
+                    m.put("targetLat",         tLat != null ? ((Number)tLat).doubleValue() : null);
+                    m.put("targetLon",         tLon != null ? ((Number)tLon).doubleValue() : null);
+                    m.put("dispatchStatus",    rs.getString("dispatch_status"));
+                    m.put("incidentId",        rs.getLong("incident_id"));
+                    m.put("assignedAt",        rs.getObject("assigned_at", OffsetDateTime.class));
+                    m.put("dispatchCreatedAt", rs.getObject("dispatch_created_at", OffsetDateTime.class));
+                    m.put("onSceneAt",         rs.getObject("on_scene_at", OffsetDateTime.class));
+                    return m;
+                }));
+
+        return result;
     }
 
     // ── status transitions ─────────────────────────────────────────────────

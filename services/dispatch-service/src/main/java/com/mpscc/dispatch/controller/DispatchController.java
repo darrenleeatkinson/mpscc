@@ -36,6 +36,15 @@ public class DispatchController {
         return service.movingResources();
     }
 
+    @GetMapping("/resources/all")
+    public List<Map<String, Object>> allResources(
+            @RequestParam(defaultValue = "51.2") double latMin,
+            @RequestParam(defaultValue = "-0.6") double lngMin,
+            @RequestParam(defaultValue = "51.8") double latMax,
+            @RequestParam(defaultValue = "0.4")  double lngMax) {
+        return service.allResources(latMin, lngMin, latMax, lngMax);
+    }
+
     @PostMapping
     public ResponseEntity<Map<String, Object>> dispatch(@RequestBody DispatchRequest req) {
         return ResponseEntity.status(201).body(service.createDispatch(req));
