@@ -6,6 +6,9 @@ spring:
 sim:
   intensity: ${SIM_INTENSITY:1.0}
   intake-url: ${INTAKE_URL:http://call-intake-service:8082}
+logging:
+  level:
+    com.mpscc.simulator: INFO
 management:
   endpoints:
     web:
