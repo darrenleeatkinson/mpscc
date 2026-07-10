@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -7,11 +7,18 @@ import 'leaflet/dist/leaflet.css'
 export interface QueuePin    { callId: string; lat: number; lng: number; phone: string; postcode: string }
 export interface ActivePin   { callId: string; lat: number; lng: number; phone: string; address: string }
 export interface IncidentPin { id: number; lat: number; lng: number; reference: string; priority: number; crimeType: string; status: string }
+export interface ResourcePin {
+  id: string; lat: number; lng: number; mode: string
+  ref: string; name: string; dispatchStatus: string; incidentId: number
+}
 
 interface Props {
   queued:    QueuePin[]
   active:    ActivePin | null
   incidents: IncidentPin[]
+  resources?: ResourcePin[]
+  selectedPos?: [number, number] | null
+  radiusM?: number
 }
 
 const PRIO: Record<number, string> = {
@@ -38,6 +45,23 @@ function dot(bg: string, size: number, glow = false) {
   })
 }
 
+const MODE_EMOJI: Record<string, string> = {
+  CAR: '🚔', VAN: '🚐', MOTORBIKE: '🏍', SCOOTER: '🛵',
+  PUSHBIKE: '🚲', FOOT: '🚶', DOG_CAR: '🐕',
+}
+
+function modeIcon(mode: string, status: string) {
+  const emoji = MODE_EMOJI[mode] ?? '🚔'
+  const bg    = status === 'ON_SCENE' ? '#0d9488' : '#1e3a5f'
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${bg};border:2px solid white;border-radius:7px;padding:2px 5px;font-size:14px;line-height:1.3;box-shadow:0 1px 5px rgba(0,0,0,.55);white-space:nowrap;">${emoji}</div>`,
+    iconSize:    [30, 26],
+    iconAnchor:  [15, 13],
+    popupAnchor: [0, -18],
+  })
+}
+
 const LONDON: [number, number] = [51.509865, -0.118092]
 
 function FlyToActive({ pos }: { pos: [number, number] | null }) {
@@ -53,7 +77,10 @@ function FlyToActive({ pos }: { pos: [number, number] | null }) {
   return null
 }
 
-export default function IncidentMap({ queued, active, incidents }: Props) {
+export default function IncidentMap({
+  queued, active, incidents,
+  resources = [], selectedPos, radiusM = 1000,
+}: Props) {
   const activePos: [number, number] | null = active ? [active.lat, active.lng] : null
 
   return (
@@ -69,6 +96,35 @@ export default function IncidentMap({ queued, active, incidents }: Props) {
       />
 
       <FlyToActive pos={activePos} />
+
+      {/* Radius circle around selected incident */}
+      {selectedPos && (
+        <Circle
+          center={selectedPos}
+          radius={radiusM}
+          pathOptions={{ color: '#2f6bff', weight: 2, dashArray: '6 4', fillColor: '#2f6bff', fillOpacity: 0.06 }}
+        />
+      )}
+
+      {/* Route lines from resources to selected incident */}
+      {selectedPos && resources.map(r => (
+        <Polyline
+          key={`route-${r.id}`}
+          positions={[[r.lat, r.lng], selectedPos]}
+          pathOptions={{ color: '#22c55e', weight: 2, dashArray: '8 5', opacity: 0.7 }}
+        />
+      ))}
+
+      {/* Resource markers (live positions) */}
+      {resources.map(r => (
+        <Marker key={`res-${r.id}`} position={[r.lat, r.lng]} icon={modeIcon(r.mode, r.dispatchStatus)}>
+          <Popup>
+            <strong>{r.ref}</strong><br />
+            {r.name}<br />
+            <small>{r.mode} · {r.dispatchStatus === 'ON_SCENE' ? '🟢 On scene' : '🔵 En route'}</small>
+          </Popup>
+        </Marker>
+      ))}
 
       {/* Queued calls and incidents share a cluster group */}
       <MarkerClusterGroup

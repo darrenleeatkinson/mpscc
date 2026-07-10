@@ -24,8 +24,16 @@ public class DispatchController {
     }
 
     @GetMapping("/incidents/{incidentId}/resources")
-    public Map<String, Object> resources(@PathVariable long incidentId) {
-        return service.suggestResources(incidentId);
+    public Map<String, Object> resources(
+            @PathVariable long incidentId,
+            @RequestParam(defaultValue = "")     String skill,
+            @RequestParam(defaultValue = "1000") int    radius) {
+        return service.suggestResources(incidentId, skill, radius);
+    }
+
+    @GetMapping("/resources/moving")
+    public List<Map<String, Object>> movingResources() {
+        return service.movingResources();
     }
 
     @PostMapping

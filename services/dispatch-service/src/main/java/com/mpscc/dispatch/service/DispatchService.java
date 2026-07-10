@@ -20,9 +20,9 @@ public class DispatchService {
 
     private static final ZoneId LONDON = ZoneId.of("Europe/London");
 
-    private final JdbcTemplate jdbc;
-    private final DispatchRepository dispatches;
-    private final DispatchResourceRepository resources;
+    final JdbcTemplate jdbc;
+    final DispatchRepository dispatches;
+    final DispatchResourceRepository resources;
 
     public DispatchService(JdbcTemplate jdbc,
                            DispatchRepository dispatches,
@@ -44,40 +44,54 @@ public class DispatchService {
                 """,
                 (rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("id",         rs.getLong("id"));
-                    m.put("reference",  rs.getString("reference"));
-                    m.put("priority",   rs.getInt("priority"));
-                    m.put("status",     rs.getString("status"));
-                    m.put("crimeType",  rs.getString("crime_type"));
-                    m.put("address",    rs.getString("address"));
-                    m.put("postcode",   rs.getString("postcode"));
-                    m.put("latitude",   rs.getDouble("latitude"));
-                    m.put("longitude",  rs.getDouble("longitude"));
-                    m.put("createdAt",  rs.getObject("created_at", OffsetDateTime.class));
+                    m.put("id",        rs.getLong("id"));
+                    m.put("reference", rs.getString("reference"));
+                    m.put("priority",  rs.getInt("priority"));
+                    m.put("status",    rs.getString("status"));
+                    m.put("crimeType", rs.getString("crime_type"));
+                    m.put("address",   rs.getString("address"));
+                    m.put("postcode",  rs.getString("postcode"));
+                    m.put("latitude",  rs.getDouble("latitude"));
+                    m.put("longitude", rs.getDouble("longitude"));
+                    m.put("createdAt", rs.getObject("created_at", OffsetDateTime.class));
                     return m;
                 });
     }
 
-    // ── resource suggestion via PostGIS distance ───────────────────────────
+    // ── resource suggestion (skill + radius filter) ────────────────────────
 
-    public Map<String, Object> suggestResources(long incidentId) {
+    public Map<String, Object> suggestResources(long incidentId, String skill, int radius) {
         Map<String, Object> inc = jdbc.queryForMap(
                 "SELECT latitude, longitude FROM incidents WHERE id = ?", incidentId);
         double lat = ((Number) inc.get("latitude")).doubleValue();
         double lon = ((Number) inc.get("longitude")).doubleValue();
 
-        List<Map<String, Object>> officers = jdbc.query("""
-                SELECT o.id, o.collar_number, o.forename, o.surname, o.rank,
-                       o.status, o.is_firearms, o.default_mode,
-                       s.name AS station_name, s.borough,
-                       ROUND(ST_Distance(s.location,
-                           ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)::numeric, 0) AS distance_m
-                FROM officers o
-                JOIN stations s ON s.id = o.home_station
-                WHERE o.status NOT IN ('DISPATCHED', 'ON_SCENE')
-                ORDER BY distance_m
-                LIMIT 15
-                """,
+        // Officers — conditional skill join
+        StringBuilder offSql = new StringBuilder("""
+                SELECT sub.* FROM (
+                    SELECT o.id, o.collar_number, o.forename, o.surname, o.rank,
+                           o.status, o.is_firearms, o.default_mode,
+                           s.name AS station_name, s.borough,
+                           ST_Y(s.location::geometry) AS station_lat,
+                           ST_X(s.location::geometry) AS station_lon,
+                           ROUND(ST_Distance(s.location,
+                               ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)::numeric, 0) AS distance_m
+                    FROM officers o
+                    JOIN stations s ON s.id = o.home_station
+                    WHERE o.status NOT IN ('DISPATCHED', 'ON_SCENE')
+                """);
+        List<Object> offParams = new ArrayList<>(List.of(lon, lat));
+        if (skill != null && !skill.isBlank()) {
+            offSql.append("""
+                        AND o.id IN (SELECT os.officer_id FROM officer_skills os
+                                     JOIN skills sk ON sk.id = os.skill_id WHERE sk.code = ?)
+                    """);
+            offParams.add(skill.toUpperCase());
+        }
+        offSql.append(") sub WHERE sub.distance_m <= ? ORDER BY sub.distance_m LIMIT 20");
+        offParams.add((long) radius);
+
+        List<Map<String, Object>> officers = jdbc.query(offSql.toString(),
                 (rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id",          rs.getLong("id"));
@@ -89,21 +103,29 @@ public class DispatchService {
                     m.put("mode",        rs.getString("default_mode"));
                     m.put("stationName", rs.getString("station_name"));
                     m.put("borough",     rs.getString("borough"));
+                    m.put("lat",         rs.getDouble("station_lat"));
+                    m.put("lon",         rs.getDouble("station_lon"));
                     m.put("distanceM",   rs.getLong("distance_m"));
                     return m;
                 },
-                lon, lat);  // ST_MakePoint(lon, lat)
+                offParams.toArray());
 
+        // Vehicles — CAR and VAN only for dispatch
         List<Map<String, Object>> vehicles = jdbc.query("""
-                SELECT v.id, v.identifier, v.type, v.seats,
-                       s.name AS station_name, s.borough,
-                       ROUND(ST_Distance(s.location,
-                           ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)::numeric, 0) AS distance_m
-                FROM vehicles v
-                JOIN stations s ON s.id = v.home_station
-                WHERE v.status NOT IN ('DISPATCHED', 'ON_SCENE')
-                  AND v.type IN ('CAR', 'VAN')
-                ORDER BY distance_m
+                SELECT sub.* FROM (
+                    SELECT v.id, v.identifier, v.type, v.seats,
+                           s.name AS station_name, s.borough,
+                           ST_Y(s.location::geometry) AS station_lat,
+                           ST_X(s.location::geometry) AS station_lon,
+                           ROUND(ST_Distance(s.location,
+                               ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)::numeric, 0) AS distance_m
+                    FROM vehicles v
+                    JOIN stations s ON s.id = v.home_station
+                    WHERE v.status NOT IN ('DISPATCHED', 'ON_SCENE')
+                      AND v.type IN ('CAR','VAN')
+                ) sub
+                WHERE sub.distance_m <= ?
+                ORDER BY sub.distance_m
                 LIMIT 10
                 """,
                 (rs, n) -> {
@@ -114,10 +136,12 @@ public class DispatchService {
                     m.put("seats",       rs.getInt("seats"));
                     m.put("stationName", rs.getString("station_name"));
                     m.put("borough",     rs.getString("borough"));
+                    m.put("lat",         rs.getDouble("station_lat"));
+                    m.put("lon",         rs.getDouble("station_lon"));
                     m.put("distanceM",   rs.getLong("distance_m"));
                     return m;
                 },
-                lon, lat);
+                lon, lat, (long) radius);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("officers", officers);
@@ -129,15 +153,16 @@ public class DispatchService {
 
     @Transactional
     public Map<String, Object> createDispatch(DispatchRequest req) {
-        // Verify incident exists and is still waiting
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT reference, priority FROM incidents WHERE id = ? AND status = 'WAITING'",
+                "SELECT reference, priority, latitude, longitude FROM incidents WHERE id = ? AND status = 'WAITING'",
                 req.getIncidentId());
         if (rows.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Incident not found or already dispatched");
         }
         Map<String, Object> inc = rows.get(0);
+        double incLat = ((Number) inc.get("latitude")).doubleValue();
+        double incLon = ((Number) inc.get("longitude")).doubleValue();
 
         Dispatch d = new Dispatch();
         d.setIncidentId(req.getIncidentId());
@@ -152,41 +177,65 @@ public class DispatchService {
 
         for (Long officerId : req.getOfficerIds()) {
             List<Map<String, Object>> o = jdbc.queryForList(
-                    "SELECT collar_number, forename, surname FROM officers WHERE id = ?", officerId);
+                    """
+                    SELECT o.collar_number, o.forename, o.surname, o.default_mode,
+                           ST_Y(s.location::geometry) AS slat, ST_X(s.location::geometry) AS slon
+                    FROM officers o JOIN stations s ON s.id = o.home_station WHERE o.id = ?
+                    """, officerId);
             if (o.isEmpty()) continue;
+
             DispatchResource r = new DispatchResource();
             r.setDispatchId(dispatchId);
             r.setResourceType("OFFICER");
             r.setResourceId(officerId);
             r.setResourceRef((String) o.get(0).get("collar_number"));
             r.setResourceName(o.get(0).get("forename") + " " + o.get(0).get("surname"));
+            r.setMode(officerMode((String) o.get(0).get("default_mode")));
+            r.setCurrentLat(((Number) o.get(0).get("slat")).doubleValue());
+            r.setCurrentLon(((Number) o.get(0).get("slon")).doubleValue());
+            r.setTargetLat(incLat);
+            r.setTargetLon(incLon);
             r.setAssignedAt(OffsetDateTime.now(LONDON));
             resources.save(r);
             jdbc.update("UPDATE officers SET status = 'DISPATCHED' WHERE id = ?", officerId);
+
             Map<String, Object> a = new LinkedHashMap<>();
             a.put("type", "OFFICER");
             a.put("ref",  r.getResourceRef());
             a.put("name", r.getResourceName());
+            a.put("mode", r.getMode());
             assigned.add(a);
         }
 
         for (Long vehicleId : req.getVehicleIds()) {
             List<Map<String, Object>> v = jdbc.queryForList(
-                    "SELECT identifier, type FROM vehicles WHERE id = ?", vehicleId);
+                    """
+                    SELECT v.identifier, v.type,
+                           ST_Y(s.location::geometry) AS slat, ST_X(s.location::geometry) AS slon
+                    FROM vehicles v JOIN stations s ON s.id = v.home_station WHERE v.id = ?
+                    """, vehicleId);
             if (v.isEmpty()) continue;
+
             DispatchResource r = new DispatchResource();
             r.setDispatchId(dispatchId);
             r.setResourceType("VEHICLE");
             r.setResourceId(vehicleId);
             r.setResourceRef((String) v.get(0).get("identifier"));
             r.setResourceName((String) v.get(0).get("type"));
+            r.setMode((String) v.get(0).get("type"));
+            r.setCurrentLat(((Number) v.get(0).get("slat")).doubleValue());
+            r.setCurrentLon(((Number) v.get(0).get("slon")).doubleValue());
+            r.setTargetLat(incLat);
+            r.setTargetLon(incLon);
             r.setAssignedAt(OffsetDateTime.now(LONDON));
             resources.save(r);
             jdbc.update("UPDATE vehicles SET status = 'DISPATCHED' WHERE id = ?", vehicleId);
+
             Map<String, Object> a = new LinkedHashMap<>();
             a.put("type", "VEHICLE");
             a.put("ref",  r.getResourceRef());
             a.put("name", r.getResourceName());
+            a.put("mode", r.getMode());
             assigned.add(a);
         }
 
@@ -208,13 +257,10 @@ public class DispatchService {
     public List<Map<String, Object>> activeDispatches() {
         List<Dispatch> active = dispatches.findActive();
         List<Map<String, Object>> result = new ArrayList<>();
-
         for (Dispatch d : active) {
-            // Get current incident details (address, lat/lon, crimeType may be richer than when dispatched)
             List<Map<String, Object>> incRows = jdbc.queryForList(
-                    "SELECT address, postcode, latitude, longitude, crime_type, status FROM incidents WHERE id = ?",
+                    "SELECT address, postcode, latitude, longitude, crime_type FROM incidents WHERE id = ?",
                     d.getIncidentId());
-
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id",          d.getId());
             m.put("incidentId",  d.getIncidentId());
@@ -223,8 +269,6 @@ public class DispatchService {
             m.put("status",      d.getStatus());
             m.put("createdAt",   d.getCreatedAt());
             m.put("onSceneAt",   d.getOnSceneAt());
-            m.put("resolvedAt",  d.getResolvedAt());
-
             if (!incRows.isEmpty()) {
                 Map<String, Object> inc = incRows.get(0);
                 m.put("address",   inc.get("address"));
@@ -233,20 +277,47 @@ public class DispatchService {
                 m.put("longitude", inc.get("longitude"));
                 m.put("crimeType", inc.get("crime_type"));
             }
-
             List<DispatchResource> res = resources.findByDispatchId(d.getId());
-            List<Map<String, Object>> resList = res.stream().map(r -> {
+            m.put("resources", res.stream().map(r -> {
                 Map<String, Object> rm = new LinkedHashMap<>();
                 rm.put("type", r.getResourceType());
                 rm.put("ref",  r.getResourceRef());
                 rm.put("name", r.getResourceName());
+                rm.put("mode", r.getMode());
                 return rm;
-            }).toList();
-            m.put("resources", resList);
-
+            }).toList());
             result.add(m);
         }
         return result;
+    }
+
+    // ── moving resource positions (for live map updates) ──────────────────
+
+    public List<Map<String, Object>> movingResources() {
+        return jdbc.query("""
+                SELECT dr.id, dr.resource_type, dr.resource_ref, dr.resource_name,
+                       dr.mode, dr.current_lat, dr.current_lon, dr.target_lat, dr.target_lon,
+                       d.status AS dispatch_status, d.incident_id
+                FROM dispatch_resources dr
+                JOIN dispatches d ON d.id = dr.dispatch_id
+                WHERE d.status IN ('ACTIVE','ON_SCENE')
+                  AND dr.current_lat IS NOT NULL
+                """,
+                (rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",            "r-" + rs.getLong("id"));
+                    m.put("resourceType",  rs.getString("resource_type"));
+                    m.put("ref",           rs.getString("resource_ref"));
+                    m.put("name",          rs.getString("resource_name"));
+                    m.put("mode",          rs.getString("mode"));
+                    m.put("lat",           rs.getDouble("current_lat"));
+                    m.put("lon",           rs.getDouble("current_lon"));
+                    m.put("targetLat",     rs.getDouble("target_lat"));
+                    m.put("targetLon",     rs.getDouble("target_lon"));
+                    m.put("dispatchStatus",rs.getString("dispatch_status"));
+                    m.put("incidentId",    rs.getLong("incident_id"));
+                    return m;
+                });
     }
 
     // ── status transitions ─────────────────────────────────────────────────
@@ -255,22 +326,13 @@ public class DispatchService {
     public Map<String, Object> markOnScene(long dispatchId) {
         Dispatch d = dispatches.findById(dispatchId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if ("ON_SCENE".equals(d.getStatus())) return Map.of("id", d.getId(), "status", d.getStatus());
         d.setStatus("ON_SCENE");
         d.setOnSceneAt(OffsetDateTime.now(LONDON));
         dispatches.save(d);
-
-        jdbc.update("UPDATE incidents SET status = 'ON_SCENE' WHERE id = ?", d.getIncidentId());
-        jdbc.update("""
-                UPDATE officers SET status = 'ON_SCENE'
-                WHERE id IN (SELECT resource_id FROM dispatch_resources
-                             WHERE dispatch_id = ? AND resource_type = 'OFFICER')
-                """, dispatchId);
-        jdbc.update("""
-                UPDATE vehicles SET status = 'ON_SCENE'
-                WHERE id IN (SELECT resource_id FROM dispatch_resources
-                             WHERE dispatch_id = ? AND resource_type = 'VEHICLE')
-                """, dispatchId);
-
+        jdbc.update("UPDATE incidents SET status='ON_SCENE' WHERE id=?", d.getIncidentId());
+        jdbc.update("UPDATE officers SET status='ON_SCENE' WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=? AND resource_type='OFFICER')", dispatchId);
+        jdbc.update("UPDATE vehicles  SET status='ON_SCENE' WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=? AND resource_type='VEHICLE')", dispatchId);
         return Map.of("id", d.getId(), "status", d.getStatus(), "onSceneAt", d.getOnSceneAt());
     }
 
@@ -281,19 +343,20 @@ public class DispatchService {
         d.setStatus("RESOLVED");
         d.setResolvedAt(OffsetDateTime.now(LONDON));
         dispatches.save(d);
-
-        jdbc.update("UPDATE incidents SET status = 'RESOLVED' WHERE id = ?", d.getIncidentId());
-        jdbc.update("""
-                UPDATE officers SET status = 'ON_DUTY'
-                WHERE id IN (SELECT resource_id FROM dispatch_resources
-                             WHERE dispatch_id = ? AND resource_type = 'OFFICER')
-                """, dispatchId);
-        jdbc.update("""
-                UPDATE vehicles SET status = 'AVAILABLE'
-                WHERE id IN (SELECT resource_id FROM dispatch_resources
-                             WHERE dispatch_id = ? AND resource_type = 'VEHICLE')
-                """, dispatchId);
-
+        jdbc.update("UPDATE incidents SET status='RESOLVED' WHERE id=?", d.getIncidentId());
+        jdbc.update("UPDATE officers SET status='ON_DUTY'   WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=? AND resource_type='OFFICER')", dispatchId);
+        jdbc.update("UPDATE vehicles  SET status='AVAILABLE' WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=? AND resource_type='VEHICLE')", dispatchId);
         return Map.of("id", d.getId(), "status", d.getStatus(), "resolvedAt", d.getResolvedAt());
+    }
+
+    // ── helpers ────────────────────────────────────────────────────────────
+
+    private String officerMode(String defaultMode) {
+        if (defaultMode == null) return "FOOT";
+        return switch (defaultMode) {
+            case "CAR","DOG_CAR" -> "CAR";
+            case "MOTORBIKE"     -> "MOTORBIKE";
+            default              -> "FOOT";
+        };
     }
 }
