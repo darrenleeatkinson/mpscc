@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPSCC · Shift Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap">
+<link rel="stylesheet" href="assets/mpscc.css">
+<style>
+html,body{height:100%}
+.app{display:flex;flex-direction:column;min-height:100vh}
+
+/* topbar extras */
+.topbar .weekpill{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.8rem;
+  padding:5px 12px;border-radius:999px;border:1px solid var(--hair);background:var(--panel);color:var(--text)}
+.topbar .weekpill b{color:var(--accent-2)}
+.topbar .clock{margin-left:auto}
+
+.content{flex:1;padding:14px}
+
+/* ---- TAB 1: scheduler three-column ---- */
+.sched-layout{display:grid;grid-template-columns:260px 1fr 260px;gap:14px;align-items:start}
+@media(max-width:1100px){.sched-layout{grid-template-columns:1fr}}
+
+/* left control panel */
+.ctrl-panel{display:flex;flex-direction:column;gap:0}
+.ctrl-section{font-size:.68rem;text-transform:uppercase;letter-spacing:.14em;color:var(--text-faint);
+  margin:14px 0 8px;font-weight:600}
+.ctrl-divider{height:1px;background:var(--hair);margin:14px 0}
+.ctrl-row{margin-bottom:12px}
+.ctrl-row label{display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:6px;color:var(--text-dim)}
+.ctrl-row label b{font-family:var(--mono);color:var(--accent-2)}
+.ctrl-row input[type=range]{width:100%;accent-color:var(--accent)}
+.ctrl-row .read-val{font-family:var(--mono);font-size:.88rem;color:var(--text);
+  background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;
+  padding:5px 10px;text-align:right}
+.sched-input{width:100%;background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;
+  color:var(--text);font-family:inherit;font-size:.85rem;padding:8px 10px;margin-bottom:8px}
+.sched-input:focus{outline:none;border-color:var(--accent)}
+.saved-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.saved-item{display:flex;align-items:center;justify-content:space-between;
+  background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;
+  padding:7px 10px;font-size:.8rem;color:var(--text-dim)}
+.saved-item .load-btn{font-size:.72rem;padding:3px 9px;border-radius:6px;
+  background:var(--panel);border:1px solid var(--hair);color:var(--accent-2);
+  cursor:pointer;transition:all .15s}
+.saved-item .load-btn:hover{background:var(--accent);color:#fff;border-color:transparent}
+
+/* heatmap */
+.hm-wrap{overflow-x:auto}
+.heatmap{display:grid;grid-template-columns:34px repeat(24,1fr);gap:2px;min-width:640px}
+.hm-h{font-size:.6rem;color:var(--text-faint);text-align:center;font-family:var(--mono);padding-bottom:2px}
+.hm-d{font-size:.68rem;color:var(--text-faint);display:flex;align-items:center;
+  justify-content:flex-end;padding-right:5px;font-weight:600}
+.hm-c{aspect-ratio:1/1;border-radius:3px;position:relative;transition:background .5s ease,transform .15s;
+  cursor:default;min-height:15px}
+.hm-c:hover{transform:scale(1.35);z-index:5;outline:1px solid #fff}
+.hm-c[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:120%;left:50%;
+  transform:translateX(-50%);white-space:nowrap;background:rgba(7,11,22,.96);
+  border:1px solid var(--hair-strong);border-radius:7px;padding:5px 9px;
+  font-size:.68rem;font-family:var(--mono);color:var(--text);z-index:20;pointer-events:none}
+
+/* line chart */
+.chartbox{position:relative}
+.chartbox svg{width:100%;height:180px;display:block}
+.axlbl{font-family:var(--mono);font-size:9px;fill:var(--text-faint)}
+
+/* station balance right col */
+.sbar{display:grid;grid-template-columns:110px 1fr 52px;gap:8px;align-items:center;
+  font-size:.8rem;margin-bottom:9px}
+.sbar .nm{color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.76rem}
+.track{position:relative;height:18px;border-radius:6px;background:var(--panel-2);
+  border:1px solid var(--hair);overflow:hidden}
+.track .fillb{position:absolute;left:0;top:0;bottom:0;border-radius:6px 0 0 6px;
+  transition:width .7s cubic-bezier(.2,.9,.3,1)}
+.sbar .flag{font-family:var(--mono);font-size:.7rem;text-align:right;font-weight:600}
+
+/* legend swatch */
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+/* toast */
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(10,16,28,.96);border:1px solid var(--hair-strong);border-radius:12px;
+  padding:12px 20px;font-size:.88rem;box-shadow:var(--shadow);opacity:0;pointer-events:none;
+  transition:all .3s;z-index:200;display:flex;align-items:center;gap:10px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---- TAB 2: station map ---- */
+.map-wrap{position:relative;width:100%;overflow:hidden}
+.map-svg{width:100%;border-radius:12px;display:block}
+.map-tooltip{position:absolute;background:rgba(7,11,22,.95);border:1px solid var(--hair-strong);
+  border-radius:8px;padding:8px 12px;font-size:.78rem;font-family:var(--mono);
+  color:var(--text);pointer-events:none;z-index:30;white-space:nowrap;
+  opacity:0;transition:opacity .15s}
+.map-tooltip.show{opacity:1}
+.station-panel{position:absolute;top:0;right:0;bottom:0;width:280px;
+  background:rgba(10,14,26,.96);backdrop-filter:blur(18px);
+  border-left:1px solid var(--hair-strong);border-radius:0 12px 12px 0;
+  padding:18px;overflow-y:auto;z-index:20;
+  transform:translateX(102%);transition:transform .3s cubic-bezier(.2,.9,.3,1)}
+.station-panel.open{transform:none}
+.sp-close{cursor:pointer;background:none;border:0;color:var(--text-dim);font-size:1.1rem;
+  float:right;padding:0;line-height:1}
+.sp-row{display:flex;justify-content:space-between;font-size:.82rem;margin:10px 0}
+.sp-row .lbl{color:var(--text-faint)}
+.sp-row .val{font-family:var(--mono);color:var(--text)}
+.unit-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}
+.unit-box{background:var(--panel-2);border:1px solid var(--hair);border-radius:8px;
+  padding:8px;text-align:center;font-size:.78rem}
+.unit-box .un{font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--accent-2)}
+.nearby-note{font-size:.74rem;color:var(--text-faint);margin:10px 0}
+
+/* ---- TAB 3: leave ---- */
+.leave-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.leave-budget{font-size:.8rem;color:var(--text-dim)}
+.status-pill{display:inline-block;font-size:.7rem;font-weight:700;padding:3px 9px;
+  border-radius:999px;letter-spacing:.04em}
+.st-pending{background:rgba(245,158,11,.18);color:var(--p2);border:1px solid rgba(245,158,11,.35)}
+.st-approved{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+.st-rejected{background:rgba(239,68,68,.15);color:var(--p1);border:1px solid rgba(239,68,68,.3)}
+.act-btn{font-size:.72rem;padding:4px 10px;border-radius:6px;border:none;cursor:pointer;
+  font-weight:600;transition:all .15s;margin-left:4px}
+.act-approve{background:rgba(34,197,94,.2);color:#22c55e;border:1px solid rgba(34,197,94,.4)}
+.act-approve:hover{background:#22c55e;color:#000}
+.act-reject{background:rgba(239,68,68,.15);color:var(--p1);border:1px solid rgba(239,68,68,.35)}
+.act-reject:hover{background:var(--p1);color:#fff}
+.spin{animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="badge">🛡</span>
+      <span>MPSCC<small>Shift Planner · Planning Office</small></span>
+    </div>
+    <span class="weekpill">Week of <b id="weekOf">—</b></span>
+    <div class="clock tnum" id="clock">--:--:--</div>
+    <a href="index.html" style="margin-left:16px;font-size:.82rem">← Design Portal</a>
+  </header>
+
+  <!-- TABS -->
+  <nav class="tabs">
+    <span class="tab active" data-tab="scheduler">Scheduler</span>
+    <span class="tab" data-tab="stationmap">Station Map</span>
+    <span class="tab" data-tab="leave">Leave</span>
+  </nav>
+
+  <div class="content">
+
+    <!-- ===================== TAB 1: SCHEDULER ===================== -->
+    <div class="tabpane active" id="tab-scheduler">
+      <div class="sched-layout">
+
+        <!-- LEFT: control panel -->
+        <div class="panel ctrl-panel">
+          <div class="ctrl-section">Shift Allocation</div>
+
+          <div class="ctrl-row">
+            <label>Night shift % <b id="nsVal">25 %</b></label>
+            <input type="range" id="nsSlider" min="0" max="50" step="1" value="25">
+            <div style="font-size:.68rem;color:var(--text-faint);margin-top:3px">NS · 22:00–08:00</div>
+          </div>
+          <div class="ctrl-row">
+            <label>Day shift % <b id="dsVal">35 %</b></label>
+            <input type="range" id="dsSlider" min="0" max="50" step="1" value="35">
+            <div style="font-size:.68rem;color:var(--text-faint);margin-top:3px">DS · 10:00–20:00</div>
+          </div>
+          <div class="ctrl-row">
+            <label>Late shift % <b id="lsVal">25 %</b></label>
+            <input type="range" id="lsSlider" min="0" max="50" step="1" value="25">
+            <div style="font-size:.68rem;color:var(--text-faint);margin-top:3px">LS · 14:00–00:00</div>
+          </div>
+          <div class="ctrl-row">
+            <label style="color:var(--text-faint)">Early shift % <span style="color:var(--text-faint);font-size:.7rem">(derived)</span></label>
+            <div class="read-val" id="esDisplay">15 %</div>
+            <div style="font-size:.68rem;color:var(--text-faint);margin-top:4px">ES · 06:00–16:00</div>
+          </div>
+
+          <div class="ctrl-divider"></div>
+          <div class="ctrl-section">Demand Factors</div>
+
+          <div class="ctrl-row">
+            <label>Weekend uplift <b id="wuVal">1.30</b></label>
+            <input type="range" id="wuSlider" min="1.00" max="2.00" step="0.05" value="1.30">
+            <div style="font-size:.68rem;color:var(--text-faint);margin-top:3px">Fri / Sat / Sun</div>
+          </div>
+          <div class="ctrl-row">
+            <label>Mon/Tue quiet <b id="mqVal">0.80</b></label>
+            <input type="range" id="mqSlider" min="0.60" max="1.00" step="0.05" value="0.80">
+          </div>
+          <div class="ctrl-row">
+            <label>Target peak on-shift <b id="tpVal">12,000</b></label>
+            <input type="range" id="tpSlider" min="5000" max="20000" step="500" value="12000">
+          </div>
+
+          <div class="ctrl-divider"></div>
+          <div class="ctrl-section">Schedule</div>
+
+          <input type="text" class="sched-input" id="schedName" placeholder="Schedule name…" value="Week 1–4 baseline">
+          <button class="btn primary" id="saveBtn" style="width:100%;justify-content:center">💾 Save schedule</button>
+
+          <div class="saved-list" id="savedList">
+            <div class="saved-item"><span>Week 1–4 baseline</span><button class="load-btn" data-sched="Week 1–4 baseline">Load</button></div>
+            <div class="saved-item"><span>Holiday period</span><button class="load-btn" data-sched="Holiday period">Load</button></div>
+            <div class="saved-item"><span>Fri/Sat uplift</span><button class="load-btn" data-sched="Fri/Sat uplift">Load</button></div>
+          </div>
+        </div>
+
+        <!-- CENTRE: heatmap + line chart -->
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="panel">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <div class="panel-title" style="margin:0">Officer Density — Hours × Days</div>
+              <div class="legend">
+                <span><span class="sw" style="background:#22c55e"></span>over</span>
+                <span><span class="sw" style="background:#eab308"></span>tight</span>
+                <span><span class="sw" style="background:#f59e0b"></span>short</span>
+                <span><span class="sw" style="background:#ef4444"></span>under</span>
+              </div>
+            </div>
+            <div class="hm-wrap"><div class="heatmap" id="heatmap"></div></div>
+          </div>
+
+          <div class="panel">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+              <div class="panel-title" style="margin:0">Officers on-shift per hour (weekly avg)</div>
+              <div class="legend">
+                <span><span class="sw" style="background:var(--accent-2)"></span>on-shift</span>
+                <span><span class="sw" style="background:var(--p1)"></span>target <b class="mono" id="targetLbl">12,000</b></span>
+              </div>
+            </div>
+            <div class="chartbox"><svg id="lineChart" viewBox="0 0 480 180" preserveAspectRatio="none"></svg></div>
+          </div>
+        </div>
+
+        <!-- RIGHT: station balance -->
+        <div class="panel">
+          <div class="panel-title">Station Balance (top 10)</div>
+          <div id="stationBars"></div>
+        </div>
+
+      </div>
+    </div><!-- /tab-scheduler -->
+
+    <!-- ===================== TAB 2: STATION MAP ===================== -->
+    <div class="tabpane" id="tab-stationmap">
+      <div class="panel" style="padding:0;overflow:hidden;position:relative">
+        <div class="map-wrap" id="mapWrap">
+          <svg id="mapSvg" class="map-svg" viewBox="0 0 900 500" preserveAspectRatio="xMidYMid meet">
+            <!-- Background -->
+            <defs>
+              <radialGradient id="mapBg" cx="50%" cy="50%" r="70%">
+                <stop offset="0%" stop-color="#0d1426"/>
+                <stop offset="100%" stop-color="#070b16"/>
+              </radialGradient>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <rect width="900" height="500" fill="url(#mapBg)"/>
+            <!-- subtle grid -->
+            <g stroke="rgba(255,255,255,0.04)" stroke-width="1">
+              <line x1="0" y1="100" x2="900" y2="100"/>
+              <line x1="0" y1="200" x2="900" y2="200"/>
+              <line x1="0" y1="300" x2="900" y2="300"/>
+              <line x1="0" y1="400" x2="900" y2="400"/>
+              <line x1="150" y1="0" x2="150" y2="500"/>
+              <line x1="300" y1="0" x2="300" y2="500"/>
+              <line x1="450" y1="0" x2="450" y2="500"/>
+              <line x1="600" y1="0" x2="600" y2="500"/>
+              <line x1="750" y1="0" x2="750" y2="500"/>
+            </g>
+            <!-- Thames sketch -->
+            <path d="M 50,340 Q 200,320 320,310 Q 400,305 480,320 Q 560,335 650,330 Q 740,325 870,345"
+              fill="none" stroke="rgba(34,211,238,0.18)" stroke-width="18" stroke-linecap="round"/>
+            <text x="340" y="326" fill="rgba(34,211,238,0.25)" font-size="11" font-family="var(--mono)">River Thames</text>
+            <!-- Station circles drawn by JS -->
+            <g id="stationCircles"></g>
+          </svg>
+          <div class="map-tooltip" id="mapTip"></div>
+          <div class="station-panel" id="stationPanel">
+            <button class="sp-close" id="spClose">✕</button>
+            <h3 id="spName" style="margin-bottom:4px;font-size:1rem">—</h3>
+            <div style="font-size:.74rem;color:var(--text-faint);margin-bottom:12px" id="spBorough">—</div>
+            <div class="sp-row"><span class="lbl">Capacity</span><span class="val" id="spCap">—</span></div>
+            <div class="sp-row"><span class="lbl">Current officers</span><span class="val" id="spCurrent">—</span></div>
+            <div class="sp-row"><span class="lbl">Fill rate</span><span class="val" id="spPct">—</span></div>
+            <hr class="hr" style="margin:10px 0">
+            <div class="ctrl-row">
+              <label>Additional officers <b id="aoVal">0</b></label>
+              <input type="range" id="aoSlider" min="-50" max="100" step="1" value="0">
+            </div>
+            <div class="unit-grid">
+              <div class="unit-box"><div class="un" id="uCar">—</div><div>CAR</div></div>
+              <div class="unit-box"><div class="un" id="uFoot">—</div><div>FOOT</div></div>
+              <div class="unit-box"><div class="un" id="uBike">—</div><div>BIKE</div></div>
+              <div class="unit-box"><div class="un" id="uDog">—</div><div>DOG</div></div>
+            </div>
+            <div class="nearby-note">↔ Draws from 3 nearest stations</div>
+            <button class="btn primary" id="applyBtn" style="width:100%;justify-content:center;margin-top:8px">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-stationmap -->
+
+    <!-- ===================== TAB 3: LEAVE ===================== -->
+    <div class="tabpane" id="tab-leave">
+      <div class="panel">
+        <div class="leave-header">
+          <div>
+            <div class="panel-title" style="margin:0">Officer Leave Management</div>
+            <div class="leave-budget">Officers take up to 25 days/year · <b style="color:var(--accent-2)">23 days</b> average remaining</div>
+          </div>
+          <button class="btn primary" onclick="toast('📋 Leave export generated')">Export CSV</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="leaveTable">
+            <thead>
+              <tr>
+                <th>Officer Name</th><th>Rank</th><th>Collar</th><th>Station</th>
+                <th>Leave Dates</th><th>Days</th><th>Remaining</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="leaveTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /tab-leave -->
+
+    <div class="footer">MPSCC prototype · Shift Planner — shift allocation, demand modelling, leave management. Mockup only.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   MPSCC · Shift Planner — vanilla JS interactive mockup
+   Tabs: Scheduler | Station Map | Leave
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const ri = (a, b) => Math.floor(rnd(a, b + 1));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+/* ---- Clock & week ---- */
+function tickClock() {
+  const now = new Date();
+  $("clock").textContent = "🇬🇧 " + now.toLocaleTimeString("en-GB", {timeZone:"Europe/London",hour12:false});
+}
+setInterval(tickClock, 1000); tickClock();
+
+(function setWeek() {
+  const d = new Date();
+  // roll to Monday
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const mon = new Date(d.setDate(diff));
+  $("weekOf").textContent = mon.toLocaleDateString("en-GB", {day:"2-digit",month:"short",year:"numeric"});
+})();
+
+/* ---- Tabs ---- */
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    document.querySelectorAll(".tabpane").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    $("tab-" + t.dataset.tab).classList.add("active");
+    if (t.dataset.tab === "stationmap") drawMap();
+  });
+});
+
+/* ---- Toast ---- */
+let toastTimer;
+function toast(msg) {
+  const el = $("toast");
+  el.innerHTML = msg; el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2800);
+}
+
+/* ============================================================
+   SLIDER STATE
+   ============================================================ */
+const S = {
+  ns: 25, ds: 35, ls: 25,   // shift %
+  wu: 1.30, mq: 0.80, tp: 12000
+};
+
+function getES() { return Math.max(0, 100 - S.ns - S.ds - S.ls); }
+
+function bindSlider(id, valId, fmt, key, cb) {
+  const el = $(id), v = $(valId);
+  el.addEventListener("input", () => {
+    S[key] = +el.value;
+    if (v) v.textContent = fmt(el.value);
+    if (cb) cb();
+  });
+  if (v) v.textContent = fmt(el.value);
+}
+
+bindSlider("nsSlider","nsVal", x => x + " %", "ns", onSliderChange);
+bindSlider("dsSlider","dsVal", x => x + " %", "ds", onSliderChange);
+bindSlider("lsSlider","lsVal", x => x + " %", "ls", onSliderChange);
+bindSlider("wuSlider","wuVal", x => Number(x).toFixed(2), "wu", onSliderChange);
+bindSlider("mqSlider","mqVal", x => Number(x).toFixed(2), "mq", onSliderChange);
+bindSlider("tpSlider","tpVal", x => Number(x).toLocaleString(), "tp", onSliderChange);
+
+let debounceTimer;
+function onSliderChange() {
+  $("esDisplay").textContent = getES() + " %";
+  $("targetLbl").textContent = S.tp.toLocaleString();
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    drawHeatmap(false);
+    drawLineChart();
+    drawStationBars();
+  }, 80);
+}
+
+/* ============================================================
+   DEMAND MODEL
+   ============================================================ */
+const DAY_BASE = { Mon: 0.80, Tue: 0.80, Wed: 0.95, Thu: 1.00, Fri: 1.20, Sat: 1.30, Sun: 1.05 };
+
+function dayFactor(d) {
+  if (d === "Fri" || d === "Sat" || d === "Sun") return S.wu;
+  if (d === "Mon" || d === "Tue") return DAY_BASE[d] * S.mq;
+  return DAY_BASE[d];
+}
+
+function hourShape(h) {
+  if (h >= 23 || h < 6) return 0.35 + (h === 23 ? 0.1 : 0);
+  if (h >= 18 && h < 23) return 0.90 + (h - 18) * 0.02;
+  if (h >= 6 && h < 10)  return 0.55 + (h - 6) * 0.08;
+  if (h >= 10 && h < 18) return 0.75 + Math.sin((h - 10) / 8 * Math.PI) * 0.25;
+  return 0.7;
+}
+
+/* officers on-shift at (day, hour) given shift mix */
+function officersAt(dayName, h) {
+  const df = dayFactor(dayName);
+  const base = S.tp * df;
+  // each shift contributes officers during its hours
+  let contrib = 0;
+  // ES 06–16, DS 10–20, LS 14–00, NS 22–08
+  if (h >= 6  && h < 16) contrib += (getES() / 100);
+  if (h >= 10 && h < 20) contrib += (S.ds / 100);
+  if (h >= 14 || h < 1)  contrib += (S.ls / 100);  // 14–00
+  if (h >= 22 || h < 8)  contrib += (S.ns / 100);
+  // normalise so full complement at peak
+  const fullShift = (getES() + S.ds + S.ls + S.ns) / 100 || 0.01;
+  return base * (contrib / fullShift) * hourShape(h);
+}
+
+/* ============================================================
+   HEATMAP
+   ============================================================ */
+function heatColor(ratio) {
+  if (ratio >= 1.0) return "#22c55e";
+  if (ratio >= 0.8) return "#eab308";
+  if (ratio >= 0.65) return "#f59e0b";
+  return "#ef4444";
+}
+function heatLabel(ratio) {
+  if (ratio >= 1.0) return "over";
+  if (ratio >= 0.8) return "tight";
+  if (ratio >= 0.65) return "short";
+  return "under";
+}
+
+let heatmapBuilt = false;
+let hmCells = [];
+
+function buildHeatmapDOM() {
+  const hm = $("heatmap");
+  hm.innerHTML = "";
+  hmCells = [];
+  // header row
+  const corner = document.createElement("div");
+  corner.className = "hm-h"; hm.appendChild(corner);
+  for (let h = 0; h < 24; h++) {
+    const lh = document.createElement("div");
+    lh.className = "hm-h";
+    lh.textContent = (h % 3 === 0) ? String(h).padStart(2,"0") : "";
+    hm.appendChild(lh);
+  }
+  DAYS.forEach(d => {
+    const dl = document.createElement("div");
+    dl.className = "hm-d"; dl.textContent = d; hm.appendChild(dl);
+    const row = [];
+    for (let h = 0; h < 24; h++) {
+      const c = document.createElement("div");
+      c.className = "hm-c";
+      c.style.background = "var(--panel-2)";
+      hm.appendChild(c); row.push(c);
+    }
+    hmCells.push(row);
+  });
+  heatmapBuilt = true;
+}
+
+function drawHeatmap(animate) {
+  if (!heatmapBuilt) buildHeatmapDOM();
+  let delay = 0;
+  DAYS.forEach((d, di) => {
+    for (let h = 0; h < 24; h++) {
+      const officers = officersAt(d, h);
+      const target = S.tp * dayFactor(d) * hourShape(h);
+      const ratio = target < 1 ? 1 : officers / target;
+      const col = heatColor(ratio);
+      const label = heatLabel(ratio);
+      const c = hmCells[di][h];
+      c.dataset.tip = d + " " + String(h).padStart(2,"0") + ":00 · " + label
+        + " · " + Math.round(officers).toLocaleString() + " officers";
+      if (animate) {
+        c.style.background = "var(--panel-2)";
+        const t = col;
+        setTimeout(() => { c.style.background = t; }, delay);
+        delay += 4;
+      } else {
+        c.style.background = col;
+      }
+    }
+  });
+}
+
+/* ============================================================
+   LINE CHART (officers per hour, weekly avg)
+   ============================================================ */
+function drawLineChart() {
+  const W = 480, H = 180, padL = 44, padB = 26, padT = 14, padR = 12;
+  const gx = x => padL + (x / 23) * (W - padL - padR);
+  const pts = [];
+  for (let h = 0; h < 24; h++) {
+    let sum = 0;
+    DAYS.forEach(d => { sum += officersAt(d, h); });
+    pts.push(sum / 7);
+  }
+  const maxV = Math.max(...pts) * 1.15;
+  const gy = v => H - padB - (v / maxV) * (H - padB - padT);
+  let line = "", area = "";
+  pts.forEach((v, i) => {
+    const x = gx(i).toFixed(1), y = gy(v).toFixed(1);
+    line += (i ? "L" : "M") + x + "," + y + " ";
+  });
+  area = line + "L" + gx(23) + "," + (H - padB) + " L" + padL + "," + (H - padB) + " Z";
+
+  let grid = "", xlab = "";
+  for (let v = 0; v <= maxV; v += 2000) {
+    const y = gy(v).toFixed(1);
+    grid += '<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y + '" stroke="rgba(255,255,255,.06)"/>';
+    grid += '<text class="axlbl" x="' + (padL - 6) + '" y="' + (+y + 3) + '" text-anchor="end">' + (v / 1000).toFixed(0) + 'k</text>';
+  }
+  for (let h = 0; h < 24; h += 4) {
+    xlab += '<text class="axlbl" x="' + gx(h).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + String(h).padStart(2,"0") + '</text>';
+  }
+  const tgY = gy(S.tp).toFixed(1);
+  let dots = "";
+  pts.forEach((v, i) => {
+    dots += '<circle cx="' + gx(i).toFixed(1) + '" cy="' + gy(v).toFixed(1) + '" r="2.2" fill="var(--accent-2)"/>';
+  });
+  // Check if this is first draw (for animation)
+  const prevPath = $("lineChart").querySelector("path[data-line]");
+  const isFirst = !prevPath;
+  $("lineChart").innerHTML =
+    '<defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0%" stop-color="rgba(34,211,238,.32)"/>'
+    + '<stop offset="100%" stop-color="rgba(34,211,238,0)"/></linearGradient></defs>'
+    + grid + xlab
+    + '<path d="' + area + '" fill="url(#lg)"/>'
+    + '<path data-line="1" d="' + line + '" fill="none" stroke="var(--accent-2)" stroke-width="2.2"'
+    + (isFirst ? ' style="stroke-dasharray:1600;stroke-dashoffset:1600"><animate attributeName="stroke-dashoffset" from="1600" to="0" dur="1s" fill="freeze"/>' : '>')
+    + '</path>'
+    + dots
+    + '<line x1="' + padL + '" y1="' + tgY + '" x2="' + (W - padR) + '" y2="' + tgY
+    + '" stroke="var(--p1)" stroke-width="1.5" stroke-dasharray="6 4"/>'
+    + '<text class="axlbl" x="' + (W - padR) + '" y="' + (+tgY - 4) + '" text-anchor="end" fill="var(--p1)">target ' + (S.tp / 1000).toFixed(0) + 'k</text>';
+}
+
+/* ============================================================
+   STATION BALANCE BARS
+   ============================================================ */
+const STATIONS = [
+  {name:"Bow MetCC",     cap:520},
+  {name:"Lambeth HQ",    cap:610},
+  {name:"Hendon",        cap:480},
+  {name:"Westminster",   cap:440},
+  {name:"Brixton",       cap:300},
+  {name:"Camden",        cap:280},
+  {name:"Hackney",       cap:260},
+  {name:"Croydon",       cap:320},
+  {name:"Ealing",        cap:210},
+  {name:"Bromley",       cap:180}
+];
+const TOTAL_CAP = STATIONS.reduce((s, x) => s + x.cap, 0);
+
+function stationOfficers(s) {
+  // proportional to capacity, scaled by total on-shift (midday Wednesday as reference)
+  const midShift = officersAt("Wed", 13);
+  return Math.round(s.cap * (midShift / S.tp));
+}
+
+function barColor(pct) {
+  if (pct < 85) return "var(--p1)";
+  if (pct <= 105) return "var(--st-available)";
+  if (pct <= 120) return "var(--p2)";
+  return "var(--accent-2)";
+}
+
+function drawStationBars() {
+  const box = $("stationBars"); box.innerHTML = "";
+  STATIONS.forEach((s, i) => {
+    const officers = stationOfficers(s) + (mapOverrides[s.name] || 0);
+    const pct = Math.round((officers / s.cap) * 100);
+    const col = barColor(pct);
+    const flag = pct < 85 ? "↓ " + pct + "%" : pct > 120 ? "↑ " + pct + "%" : pct + "%";
+    const row = document.createElement("div");
+    row.className = "sbar";
+    row.innerHTML = '<span class="nm" title="' + s.name + '">' + s.name + '</span>'
+      + '<div class="track" title="' + officers + ' / ' + s.cap + '"><div class="fillb" style="width:0%;background:' + col + '"></div></div>'
+      + '<span class="flag" style="color:' + col + '">' + flag + '</span>';
+    box.appendChild(row);
+    const fb = row.querySelector(".fillb");
+    setTimeout(() => { fb.style.width = clamp(pct, 0, 115) + "%"; }, 60 + i * 40);
+  });
+}
+
+/* ============================================================
+   TAB 2: STATION MAP
+   ============================================================ */
+const MAP_STATIONS = [
+  {name:"Bow MetCC",    cx:540, cy:240, cap:520,  borough:"Tower Hamlets"},
+  {name:"Lambeth HQ",   cx:430, cy:290, cap:610,  borough:"Lambeth"},
+  {name:"Hendon",       cx:320, cy:160, cap:480,  borough:"Barnet"},
+  {name:"Westminster",  cx:400, cy:260, cap:440,  borough:"Westminster"},
+  {name:"Brixton",      cx:420, cy:330, cap:300,  borough:"Lambeth"},
+  {name:"Camden",       cx:390, cy:215, cap:280,  borough:"Camden"},
+  {name:"Hackney",      cx:480, cy:220, cap:260,  borough:"Hackney"},
+  {name:"Croydon",      cx:455, cy:370, cap:320,  borough:"Croydon"},
+  {name:"Ealing",       cx:265, cy:270, cap:210,  borough:"Ealing"},
+  {name:"Bromley",      cx:520, cy:360, cap:180,  borough:"Bromley"},
+  {name:"Lewisham",     cx:475, cy:325, cap:190,  borough:"Lewisham"},
+  {name:"Southwark",    cx:445, cy:285, cap:240,  borough:"Southwark"}
+];
+
+const mapOverrides = {}; // name -> additional officers delta
+let mapBuilt = false;
+let selectedStation = null;
+
+function mapOfficers(s) {
+  const midShift = officersAt("Wed", 13);
+  return Math.round(s.cap * (midShift / S.tp)) + (mapOverrides[s.name] || 0);
+}
+
+function drawMap() {
+  if (mapBuilt) { updateMapCircles(); return; }
+  mapBuilt = true;
+  const g = $("stationCircles");
+  g.innerHTML = "";
+  MAP_STATIONS.forEach(s => {
+    const officers = mapOfficers(s);
+    const pct = (officers / s.cap) * 100;
+    const col = barColor(pct);
+    const r = Math.sqrt(s.cap) * 1.1;
+    const group = document.createElementNS("http://www.w3.org/2000/svg","g");
+    group.setAttribute("data-name", s.name);
+    group.style.cursor = "pointer";
+
+    const pulse = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    pulse.setAttribute("cx", s.cx); pulse.setAttribute("cy", s.cy); pulse.setAttribute("r", r + 6);
+    pulse.setAttribute("fill", "none"); pulse.setAttribute("stroke", col);
+    pulse.setAttribute("stroke-width","1"); pulse.setAttribute("opacity","0.3");
+    pulse.classList.add("pulse-ring");
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    circle.setAttribute("cx", s.cx); circle.setAttribute("cy", s.cy); circle.setAttribute("r", r);
+    circle.setAttribute("fill", col); circle.setAttribute("fill-opacity","0.75");
+    circle.setAttribute("stroke", col); circle.setAttribute("stroke-width","1.5");
+    circle.setAttribute("filter","url(#glow)");
+
+    const label = document.createElementNS("http://www.w3.org/2000/svg","text");
+    label.setAttribute("x", s.cx); label.setAttribute("y", s.cy + r + 14);
+    label.setAttribute("text-anchor","middle"); label.setAttribute("font-size","9");
+    label.setAttribute("font-family","var(--mono)"); label.setAttribute("fill","rgba(255,255,255,0.6)");
+    label.textContent = s.name.split(" ")[0];
+
+    group.appendChild(pulse); group.appendChild(circle); group.appendChild(label);
+    g.appendChild(group);
+
+    // hover tooltip
+    group.addEventListener("mouseenter", e => showMapTip(e, s));
+    group.addEventListener("mouseleave", hideMapTip);
+    group.addEventListener("mousemove", e => moveMapTip(e));
+    group.addEventListener("click", () => openStationPanel(s));
+  });
+}
+
+function updateMapCircles() {
+  const g = $("stationCircles");
+  MAP_STATIONS.forEach(s => {
+    const group = g.querySelector('[data-name="' + s.name + '"]');
+    if (!group) return;
+    const officers = mapOfficers(s);
+    const pct = (officers / s.cap) * 100;
+    const col = barColor(pct);
+    const r = Math.sqrt(s.cap) * 1.1 * (selectedStation === s.name ? 1.0 : 1.0);
+    const circles = group.querySelectorAll("circle");
+    circles[1].setAttribute("r", r);
+    circles[1].setAttribute("fill", col); circles[1].setAttribute("stroke", col);
+    circles[0].setAttribute("r", r + 6); circles[0].setAttribute("stroke", col);
+  });
+}
+
+function showMapTip(e, s) {
+  const officers = mapOfficers(s);
+  const pct = Math.round((officers / s.cap) * 100);
+  const tip = $("mapTip");
+  tip.innerHTML = '<b>' + s.name + '</b> · ' + s.borough
+    + '<br>' + officers + ' / ' + s.cap + ' officers · ' + pct + '% fill';
+  tip.classList.add("show");
+}
+function hideMapTip() { $("mapTip").classList.remove("show"); }
+function moveMapTip(e) {
+  const rect = $("mapWrap").getBoundingClientRect();
+  const tip = $("mapTip");
+  tip.style.left = (e.clientX - rect.left + 12) + "px";
+  tip.style.top  = (e.clientY - rect.top  - 36) + "px";
+}
+
+function openStationPanel(s) {
+  selectedStation = s.name;
+  const officers = mapOfficers(s);
+  const pct = Math.round((officers / s.cap) * 100);
+  $("spName").textContent = s.name;
+  $("spBorough").textContent = s.borough + " · Police Station";
+  $("spCap").textContent = s.cap;
+  $("spCurrent").textContent = officers;
+  $("spPct").textContent = pct + "%";
+  $("aoSlider").value = mapOverrides[s.name] || 0;
+  $("aoVal").textContent = mapOverrides[s.name] || 0;
+  // unit breakdown
+  $("uCar").textContent  = Math.round(officers * 0.52);
+  $("uFoot").textContent = Math.round(officers * 0.28);
+  $("uBike").textContent = Math.round(officers * 0.12);
+  $("uDog").textContent  = Math.round(officers * 0.08);
+  $("stationPanel").classList.add("open");
+
+  $("aoSlider").oninput = () => {
+    const delta = +$("aoSlider").value;
+    $("aoVal").textContent = delta >= 0 ? "+" + delta : delta;
+    mapOverrides[s.name] = delta;
+    const cur = mapOfficers(s);
+    const pp = Math.round((cur / s.cap) * 100);
+    $("spCurrent").textContent = cur;
+    $("spPct").textContent = pp + "%";
+    $("uCar").textContent  = Math.round(cur * 0.52);
+    $("uFoot").textContent = Math.round(cur * 0.28);
+    $("uBike").textContent = Math.round(cur * 0.12);
+    $("uDog").textContent  = Math.round(cur * 0.08);
+    updateMapCircles();
+  };
+}
+
+$("spClose").addEventListener("click", () => {
+  $("stationPanel").classList.remove("open");
+  selectedStation = null;
+});
+$("applyBtn").addEventListener("click", () => {
+  $("stationPanel").classList.remove("open");
+  toast("✅ Station adjustment applied · nearest stations rebalanced");
+  updateMapCircles();
+  drawStationBars();
+});
+
+/* ============================================================
+   TAB 3: LEAVE TABLE
+   ============================================================ */
+const LEAVE_DATA = [
+  {name:"PC 2456 A. Barlow",   rank:"PC",   collar:"CD2456",  station:"Bow MetCC",   dates:"14–18 Jul 2026", days:5,  rem:20, status:"APPROVED"},
+  {name:"PS 0912 K. Davies",   rank:"PS",   collar:"CD0912",  station:"Lambeth HQ",  dates:"21–25 Jul 2026", days:5,  rem:18, status:"PENDING"},
+  {name:"DC 8820 L. Moran",    rank:"DC",   collar:"CD8820",  station:"Westminster", dates:"28 Jul–1 Aug",   days:5,  rem:22, status:"PENDING"},
+  {name:"INSP 0203 V. Chen",   rank:"INSP", collar:"CD0203",  station:"Hendon",      dates:"4–8 Aug 2026",   days:5,  rem:15, status:"APPROVED"},
+  {name:"PC 1177 R. Sinclair", rank:"PC",   collar:"CD1177",  station:"Camden",      dates:"11–22 Aug 2026", days:10, rem:10, status:"APPROVED"},
+  {name:"PC 6654 X. Zhang",    rank:"PC",   collar:"CD6654",  station:"Hackney",     dates:"18–19 Aug 2026", days:2,  rem:23, status:"REJECTED"},
+  {name:"DS 3308 E. Grant",    rank:"DS",   collar:"CD3308",  station:"Brixton",     dates:"25–29 Aug 2026", days:5,  rem:17, status:"PENDING"},
+  {name:"PC 4490 H. Nwosu",    rank:"PC",   collar:"CD4490",  station:"Croydon",     dates:"1–12 Sep 2026",  days:10, rem:12, status:"PENDING"}
+];
+
+function renderLeave() {
+  const tbody = $("leaveTbody");
+  tbody.innerHTML = "";
+  LEAVE_DATA.forEach((r, i) => {
+    const statusCls = {APPROVED:"st-approved",PENDING:"st-pending",REJECTED:"st-rejected"}[r.status];
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td><b>' + r.name + '</b></td>'
+      + '<td><span class="chip">' + r.rank + '</span></td>'
+      + '<td class="mono" style="font-size:.78rem">' + r.collar + '</td>'
+      + '<td>' + r.station + '</td>'
+      + '<td class="mono" style="font-size:.78rem">' + r.dates + '</td>'
+      + '<td class="mono" style="text-align:center">' + r.days + '</td>'
+      + '<td class="mono" style="text-align:center;color:var(--accent-2)">' + r.rem + '</td>'
+      + '<td><span class="status-pill ' + statusCls + '">' + r.status + '</span></td>'
+      + '<td>'
+      + '<button class="act-btn act-approve" data-i="' + i + '" data-act="APPROVED">Approve</button>'
+      + '<button class="act-btn act-reject" data-i="' + i + '" data-act="REJECTED">Reject</button>'
+      + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll(".act-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = +btn.dataset.i;
+      const act = btn.dataset.act;
+      LEAVE_DATA[idx].status = act;
+      renderLeave();
+      toast((act === "APPROVED" ? "✅ Leave approved" : "❌ Leave rejected") + " · " + LEAVE_DATA[idx].name);
+    });
+  });
+}
+renderLeave();
+
+/* ============================================================
+   SAVE / LOAD schedules
+   ============================================================ */
+const schedules = {};
+
+$("saveBtn").addEventListener("click", () => {
+  const name = $("schedName").value.trim() || "Untitled";
+  schedules[name] = { ns:S.ns, ds:S.ds, ls:S.ls, wu:S.wu, mq:S.mq, tp:S.tp };
+  // add to list if new
+  if (!$("savedList").querySelector('[data-sched="' + name + '"]')) {
+    const item = document.createElement("div");
+    item.className = "saved-item";
+    item.innerHTML = '<span>' + name + '</span><button class="load-btn" data-sched="' + name + '">Load</button>';
+    item.querySelector(".load-btn").addEventListener("click", () => loadSched(name));
+    $("savedList").appendChild(item);
+  }
+  toast("💾 Schedule saved · "" + name + """);
+});
+
+function loadSched(name) {
+  const cfg = schedules[name];
+  if (!cfg) { toast("ℹ Schedule "" + name + "" — using defaults"); return; }
+  ["ns","ds","ls","wu","mq","tp"].forEach(k => { S[k] = cfg[k]; });
+  $("nsSlider").value = S.ns; $("nsVal").textContent = S.ns + " %";
+  $("dsSlider").value = S.ds; $("dsVal").textContent = S.ds + " %";
+  $("lsSlider").value = S.ls; $("lsVal").textContent = S.ls + " %";
+  $("wuSlider").value = S.wu; $("wuVal").textContent = S.wu.toFixed(2);
+  $("mqSlider").value = S.mq; $("mqVal").textContent = S.mq.toFixed(2);
+  $("tpSlider").value = S.tp; $("tpVal").textContent = S.tp.toLocaleString();
+  onSliderChange();
+  toast("📂 Loaded "" + name + """);
+}
+
+document.querySelectorAll(".load-btn[data-sched]").forEach(btn => {
+  btn.addEventListener("click", () => loadSched(btn.dataset.sched));
+});
+
+/* ============================================================
+   INIT
+   ============================================================ */
+$("esDisplay").textContent = getES() + " %";
+drawHeatmap(true);
+drawLineChart();
+drawStationBars();
+
+setTimeout(() => toast("👋 Adjust sliders to model shift allocation and demand factors in real-time"), 900);
+</script>
+</body>
+</html>
