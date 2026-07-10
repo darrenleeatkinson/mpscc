@@ -64,4 +64,30 @@ public class DispatchController {
     public Map<String, Object> resolve(@PathVariable long id) {
         return service.resolve(id);
     }
+
+    @GetMapping("/incidents/{incidentId}/notes")
+    public List<Map<String, Object>> listNotes(@PathVariable long incidentId) {
+        return service.listNotes(incidentId);
+    }
+
+    @PostMapping("/incidents/{incidentId}/notes")
+    public Map<String, Object> addNote(
+            @PathVariable long incidentId,
+            @RequestBody Map<String, String> body) {
+        String author   = body.getOrDefault("author",   "Dispatcher");
+        String noteText = body.getOrDefault("noteText",  "");
+        String noteType = body.getOrDefault("noteType",  "TEXT");
+        return service.addNote(incidentId, author, noteText, noteType);
+    }
+
+    @PostMapping("/resources/{drId}/route")
+    public ResponseEntity<Void> saveRoute(
+            @PathVariable long drId,
+            @RequestBody Map<String, Object> body) {
+        String geojson = body.getOrDefault("routeGeojson", "").toString();
+        int distM = body.containsKey("distanceM") ? ((Number) body.get("distanceM")).intValue() : 0;
+        int durS  = body.containsKey("durationS") ? ((Number) body.get("durationS")).intValue() : 0;
+        service.saveRoute(drId, geojson, distM, durS);
+        return ResponseEntity.noContent().build();
+    }
 }

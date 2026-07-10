@@ -365,7 +365,7 @@ public class DispatchService {
                 },
                 lngMin, lngMax, latMin, latMax));
 
-        // Free officers (ON_DUTY) whose home station is within bounds
+        // Free officers (on patrol) whose home station is within bounds
         result.addAll(jdbc.query("""
                 SELECT 'o-' || o.id       AS id,
                        'OFFICER'           AS resource_type,
@@ -376,10 +376,10 @@ public class DispatchService {
                        ST_X(s.location::geometry) AS lon
                 FROM officers o
                 JOIN stations s ON s.id = o.home_station
-                WHERE o.status = 'ON_DUTY'
+                WHERE o.status NOT IN ('DISPATCHED', 'ON_SCENE')
                   AND ST_X(s.location::geometry) BETWEEN ? AND ?
                   AND ST_Y(s.location::geometry) BETWEEN ? AND ?
-                LIMIT 300
+                LIMIT 3000
                 """,
                 (rs, n) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -412,6 +412,7 @@ public class DispatchService {
                        dr.current_lon     AS lon,
                        dr.target_lat,
                        dr.target_lon,
+                       dr.route_geojson,
                        d.status           AS dispatch_status,
                        d.incident_id,
                        dr.assigned_at,
@@ -434,6 +435,8 @@ public class DispatchService {
                     Object tLat = rs.getObject("target_lat"); Object tLon = rs.getObject("target_lon");
                     m.put("targetLat",         tLat != null ? ((Number)tLat).doubleValue() : null);
                     m.put("targetLon",         tLon != null ? ((Number)tLon).doubleValue() : null);
+                    Object routeJson = rs.getObject("route_geojson");
+                    m.put("routeGeojson",      routeJson != null ? routeJson.toString() : null);
                     m.put("dispatchStatus",    rs.getString("dispatch_status"));
                     m.put("incidentId",        rs.getLong("incident_id"));
                     m.put("assignedAt",        rs.getObject("assigned_at", OffsetDateTime.class));
@@ -472,6 +475,56 @@ public class DispatchService {
         jdbc.update("UPDATE officers SET status='ON_DUTY'   WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=? AND resource_type='OFFICER')", dispatchId);
         jdbc.update("UPDATE vehicles  SET status='AVAILABLE' WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=? AND resource_type='VEHICLE')", dispatchId);
         return Map.of("id", d.getId(), "status", d.getStatus(), "resolvedAt", d.getResolvedAt());
+    }
+
+    // ── incident notes ─────────────────────────────────────────────────────
+
+    public List<Map<String, Object>> listNotes(long incidentId) {
+        return jdbc.query("""
+                SELECT id, incident_id, dispatch_id, author, note_text, note_type, created_at
+                FROM incident_notes
+                WHERE incident_id = ?
+                ORDER BY created_at ASC
+                """,
+                (rs, n) -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",         rs.getLong("id"));
+                    m.put("incidentId", rs.getLong("incident_id"));
+                    m.put("dispatchId", rs.getObject("dispatch_id"));
+                    m.put("author",     rs.getString("author"));
+                    m.put("noteText",   rs.getString("note_text"));
+                    m.put("noteType",   rs.getString("note_type"));
+                    m.put("createdAt",  rs.getObject("created_at", OffsetDateTime.class));
+                    return m;
+                },
+                incidentId);
+    }
+
+    public Map<String, Object> addNote(long incidentId, String author, String noteText, String noteType) {
+        long id = jdbc.queryForObject("""
+                INSERT INTO incident_notes (incident_id, author, note_text, note_type)
+                VALUES (?, ?, ?, ?)
+                RETURNING id
+                """, Long.class, incidentId, author, noteText, noteType);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id",         id);
+        m.put("incidentId", incidentId);
+        m.put("author",     author);
+        m.put("noteText",   noteText);
+        m.put("noteType",   noteType);
+        m.put("createdAt",  OffsetDateTime.now());
+        return m;
+    }
+
+    // ── route persistence ──────────────────────────────────────────────────
+
+    public void saveRoute(long dispatchResourceId, String routeGeojson, int distanceM, int durationS) {
+        jdbc.update("""
+                UPDATE dispatch_resources
+                SET route_geojson = ?::jsonb, route_distance_m = ?, route_duration_s = ?, route_saved_at = now()
+                WHERE id = ?
+                """,
+                routeGeojson, distanceM, durationS, dispatchResourceId);
     }
 
     // ── helpers ────────────────────────────────────────────────────────────
