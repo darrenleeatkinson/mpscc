@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
@@ -16,7 +17,6 @@ public class CallSimulatorService {
     private static final Random RNG = new Random();
     private static final ZoneId LONDON = ZoneId.of("Europe/London");
 
-    // Demand curve: index = hour of day (0–23), value = relative call rate
     private static final double[] DEMAND = {
         0.30, 0.20, 0.15, 0.10, 0.10, 0.15,  // 00–05
         0.20, 0.35, 0.50, 0.60, 0.70, 0.75,  // 06–11
@@ -24,8 +24,7 @@ public class CallSimulatorService {
         1.00, 0.95, 0.90, 0.80, 0.65, 0.45   // 18–23
     };
 
-    // Each area owns its geographic centre and a jitter radius so that the
-    // generated lat/lon always lands inside the real postcode district.
+    // Each area owns its real centre coordinate so lat/lon and postcode district are always consistent.
     private record PostcodeArea(String district, double lat, double lon, double radius) {}
 
     private static final PostcodeArea[] AREAS = {
@@ -63,6 +62,7 @@ public class CallSimulatorService {
         new PostcodeArea("WC2",  51.512, -0.122, 0.014),
     };
 
+    // Fallback street names used only when Nominatim is unavailable
     private static final String[] STREETS = {
         "High Street", "Church Road", "Station Road", "Park Lane", "Victoria Road",
         "London Road", "King Street", "Manor Road", "Green Lane", "Mill Road",
@@ -70,6 +70,9 @@ public class CallSimulatorService {
         "Elm Avenue", "Oak Road", "Rose Street", "Trafalgar Way", "Westminster Close",
         "Borough Road", "Commercial Street", "Whitechapel Road", "Lewisham Way", "Brixton Road"
     };
+
+    private static final String NOMINATIM =
+        "https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1";
 
     private final RestTemplate rest;
 
@@ -101,25 +104,61 @@ public class CallSimulatorService {
     }
 
     private CallInbound generateCall() {
-        // Pick a geographic area; derive lat/lon and postcode from the same source
         PostcodeArea area = AREAS[RNG.nextInt(AREAS.length)];
         double lat = area.lat() + (RNG.nextDouble() * 2 - 1) * area.radius();
         double lon = area.lon() + (RNG.nextDouble() * 2 - 1) * area.radius();
 
-        // Postcode sector suffix — still synthetic but the district is accurate
-        String sector = (RNG.nextInt(9) + 1)
-            + String.valueOf((char) ('A' + RNG.nextInt(26)))
-            + String.valueOf((char) ('A' + RNG.nextInt(26)));
+        // Reverse-geocode to get the real street and postcode at this point
+        String[] geo = reverseGeocode(lat, lon);
+        String address  = geo[0];
+        String postcode = geo[1] != null ? geo[1] : syntheticPostcode(area);
 
         CallInbound call = new CallInbound();
         call.setCallId(UUID.randomUUID().toString());
         call.setPhone("+44 7700 9" + String.format("%05d", RNG.nextInt(100000)));
-        call.setPostcode(area.district() + " " + sector);
-        call.setAddress((RNG.nextInt(200) + 1) + " " + STREETS[RNG.nextInt(STREETS.length)]);
+        call.setPostcode(postcode);
+        call.setAddress(address);
         call.setLatitude(lat);
         call.setLongitude(lon);
         call.setAccuracyMeters(RNG.nextInt(200) + 50);
         call.setTsn(System.currentTimeMillis());
         return call;
+    }
+
+    /**
+     * Returns [address, postcode]. Either element may come from Nominatim or fall back
+     * to synthetic data; postcode may be null if Nominatim gave nothing useful.
+     */
+    @SuppressWarnings("unchecked")
+    private String[] reverseGeocode(double lat, double lon) {
+        try {
+            Map<String, Object> resp = rest.getForObject(NOMINATIM, Map.class, lat, lon);
+            if (resp == null) return syntheticGeo();
+
+            Map<String, Object> addr = (Map<String, Object>) resp.get("address");
+            if (addr == null) return syntheticGeo();
+
+            String road     = (String) addr.get("road");
+            String postcode = (String) addr.get("postcode");
+
+            if (road == null) return new String[]{ syntheticGeo()[0], postcode };
+
+            String houseNo = (String) addr.get("house_number");
+            String streetAddress = (houseNo != null ? houseNo : (RNG.nextInt(200) + 1)) + " " + road;
+            return new String[]{ streetAddress, postcode };
+
+        } catch (Exception e) {
+            return syntheticGeo();
+        }
+    }
+
+    private String[] syntheticGeo() {
+        return new String[]{ (RNG.nextInt(200) + 1) + " " + STREETS[RNG.nextInt(STREETS.length)], null };
+    }
+
+    private String syntheticPostcode(PostcodeArea area) {
+        return area.district() + " " + (RNG.nextInt(9) + 1)
+            + (char) ('A' + RNG.nextInt(26))
+            + (char) ('A' + RNG.nextInt(26));
     }
 }
