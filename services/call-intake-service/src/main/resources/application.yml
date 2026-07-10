@@ -1,0 +1,25 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: call-intake-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/mpscc}
+    username: ${SPRING_DATASOURCE_USERNAME:mpscc}
+    password: ${SPRING_DATASOURCE_PASSWORD:mpscc_dev_change_me}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+    table: flyway_intake_history
+mpscc:
+  jwt:
+    secret: ${JWT_SECRET:change_me_dev_secret_at_least_64_bytes_long_padding_padding_padding}
+    ttl-millis: 86400000
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

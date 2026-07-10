@@ -53,6 +53,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change_me_dev_secret_at_least_64_bytes_long_padding_padding_padding}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:20000}
       AUTH_SERVICE_URI: http://auth-service:8081
+      RESOURCE_SERVICE_URI: http://resource-service:8085
+      CALL_INTAKE_SERVICE_URI: http://call-intake-service:8082
       JAVA_TOOL_OPTIONS: "-Xmx256m"
     depends_on: [auth-service]
     ports: ["20001:8080"]
@@ -68,6 +70,34 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     ports: ["20003:8085"]
+    restart: unless-stopped
+
+  call-intake-service:
+    build: { context: ., dockerfile: services/call-intake-service/Dockerfile }
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-mpscc}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-mpscc}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-mpscc_dev_change_me}
+      JWT_SECRET: ${JWT_SECRET:-change_me_dev_secret_at_least_64_bytes_long_padding_padding_padding}
+      JAVA_TOOL_OPTIONS: "-Xmx256m"
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8082/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+
+  call-simulator-service:
+    build: { context: ., dockerfile: services/call-simulator-service/Dockerfile }
+    environment:
+      INTAKE_URL: http://call-intake-service:8082
+      SIM_INTENSITY: "1.0"
+      JAVA_TOOL_OPTIONS: "-Xmx128m"
+    depends_on:
+      call-intake-service: { condition: service_healthy }
     restart: unless-stopped
 
   frontend:

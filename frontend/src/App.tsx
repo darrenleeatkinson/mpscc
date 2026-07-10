@@ -3,6 +3,7 @@ import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import PersonaPlaceholder from './pages/PersonaPlaceholder'
+import ResponderConsolePage from './pages/ResponderConsolePage'
 
 export default function App() {
   return (
@@ -22,7 +23,7 @@ export default function App() {
         path="/responder"
         element={
           <RequireAuth role="RESPONDER">
-            <PersonaPlaceholder personaKey="responder" />
+            <ResponderConsolePage />
           </RequireAuth>
         }
       />
