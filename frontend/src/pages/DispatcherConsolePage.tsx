@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import IncidentMap from '../components/IncidentMap'
-import type { IncidentPin, ActivePin, ResourcePin, MapBounds } from '../components/IncidentMap'
+import IncidentDetailPanel from '../components/IncidentDetailPanel'
+import type { IncidentPin, ActivePin, ResourcePin, MapBounds, HistoryNav } from '../components/IncidentMap'
+import type { ActiveDispatch } from '../components/IncidentDetailPanel'
 import { api } from '../api/client'
 
 // ── types ─────────────────────────────────────────────────────────────────
@@ -25,13 +27,6 @@ interface ResourceVehicle {
 interface SuggestedResources {
   officers: ResourceOfficer[]
   vehicles: ResourceVehicle[]
-}
-interface ActiveDispatch {
-  id: number; incidentId: number; incidentRef: string; priority: number
-  status: string; address: string; postcode: string
-  latitude: number; longitude: number; crimeType: string
-  createdAt: string; onSceneAt: string | null
-  resources: { type: string; ref: string; name: string; mode?: string }[]
 }
 interface MovingResource {
   id: string; resourceType: string; ref: string; name: string
@@ -72,7 +67,7 @@ const SKILLS = [
   { code: 'INTERPRETER',      label: 'Interpreter' },
 ]
 
-function fmt(t: string)   { return t?.replace(/_/g, ' ') ?? '' }
+function fmt(t: string) { return t?.replace(/_/g, ' ') ?? '' }
 function etaMin(distM: number, mode: string): number {
   return Math.max(1, Math.ceil(distM / (SPEED_MS[mode] ?? 1.4) / 60))
 }
@@ -105,7 +100,12 @@ export default function DispatcherConsolePage() {
   const [unit,         setUnit]         = useState<'metric' | 'imperial'>('metric')
   const [loadingRes,   setLoadingRes]   = useState(false)
 
-  const radiusDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Detail panel + map highlight
+  const [detailDispatch, setDetailDispatch] = useState<ActiveDispatch | null>(null)
+  const [mapHighlightId, setMapHighlightId] = useState<number | null>(null)
+  const [histNav,        setHistNav]        = useState<HistoryNav | null>(null)
+
+  const radiusDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [debouncedRadius, setDebouncedRadius] = useState(1000)
   const mapBoundsRef = useRef<MapBounds>({ latMin: 51.2, lngMin: -0.6, latMax: 51.8, lngMax: 0.4 })
 
@@ -113,7 +113,11 @@ export default function DispatcherConsolePage() {
     mapBoundsRef.current = b
   }, [])
 
-  // Debounce radius slider (200ms) to avoid hammering the API on drag
+  const handleHistoryChange = useCallback((nav: HistoryNav) => {
+    setHistNav(nav)
+  }, [])
+
+  // Debounce radius slider
   useEffect(() => {
     if (radiusDebounce.current) clearTimeout(radiusDebounce.current)
     radiusDebounce.current = setTimeout(() => setDebouncedRadius(radiusM), 200)
@@ -124,9 +128,18 @@ export default function DispatcherConsolePage() {
 
   const pollWaiting = useCallback(() =>
     api<WaitingIncident[]>('/api/dispatch/incidents/waiting').then(setWaiting).catch(() => {}), [])
-  const pollActive  = useCallback(() =>
-    api<ActiveDispatch[]>('/api/dispatch').then(setActive).catch(() => {}), [])
-  const pollMoving  = useCallback(() => {
+
+  const pollActive = useCallback(() =>
+    api<ActiveDispatch[]>('/api/dispatch').then(d => {
+      setActive(d)
+      // Keep detailDispatch fresh if it's still in the active list
+      setDetailDispatch(prev => {
+        if (!prev) return null
+        return d.find(a => a.id === prev.id) ?? null
+      })
+    }).catch(() => {}), [])
+
+  const pollMoving = useCallback(() => {
     const { latMin, lngMin, latMax, lngMax } = mapBoundsRef.current
     return api<MovingResource[]>(
       `/api/dispatch/resources/all?latMin=${latMin}&lngMin=${lngMin}&latMax=${latMax}&lngMax=${lngMax}`
@@ -157,11 +170,39 @@ export default function DispatcherConsolePage() {
     setSelOfficers(new Set())
     setSelVehicles(new Set())
     setSuggested(null)
+    setDetailDispatch(null)
+    setMapHighlightId(inc.id)
   }
 
   function clearSelection() {
     setSelected(null); setSuggested(null)
     setSelOfficers(new Set()); setSelVehicles(new Set())
+    setMapHighlightId(null)
+  }
+
+  function closeDetailPanel() {
+    setDetailDispatch(null)
+    setMapHighlightId(null)
+  }
+
+  function openDispatchDetail(d: ActiveDispatch) {
+    setDetailDispatch(d)
+    setMapHighlightId(-d.id)
+    setSelected(null)
+    setSuggested(null)
+  }
+
+  // Clicking an incident on the map
+  function handleIncidentClick(i: IncidentPin) {
+    if (i.id < 0) {
+      // Active dispatch — id is -dispatchId
+      const d = active.find(a => a.id === -i.id)
+      if (d) openDispatchDetail(d)
+    } else {
+      // Waiting incident
+      const w = waiting.find(x => x.id === i.id)
+      if (w) selectIncident(w)
+    }
   }
 
   async function handleDispatch() {
@@ -181,11 +222,16 @@ export default function DispatcherConsolePage() {
 
   async function handleOnScene(id: number) {
     await api(`/api/dispatch/${id}/on-scene`, { method: 'POST' }).catch(() => {})
+    // Optimistic update on detail panel
+    setDetailDispatch(prev =>
+      prev?.id === id ? { ...prev, status: 'ON_SCENE', onSceneAt: new Date().toISOString() } : prev
+    )
     pollActive(); pollMoving()
   }
 
   async function handleResolve(id: number) {
     await api(`/api/dispatch/${id}/resolve`, { method: 'POST' }).catch(() => {})
+    if (detailDispatch?.id === id) closeDetailPanel()
     pollActive(); pollWaiting(); pollMoving()
   }
 
@@ -211,10 +257,12 @@ export default function DispatcherConsolePage() {
     ...waiting.map(i => ({ id: i.id, lat: i.latitude, lng: i.longitude, reference: i.reference, priority: i.priority, crimeType: i.crimeType, status: i.status })),
     ...active.filter(d => d.latitude).map(d => ({ id: -d.id, lat: d.latitude, lng: d.longitude, reference: d.incidentRef, priority: d.priority, crimeType: d.crimeType, status: d.status })),
   ]
-  const activePin: ActivePin | null = selected
+
+  const activePin: ActivePin | null = selected && !detailDispatch
     ? { callId: String(selected.id), lat: selected.latitude, lng: selected.longitude, phone: selected.reference, address: selected.address }
     : null
-  const selectedPos: [number, number] | null = selected
+
+  const selectedPos: [number, number] | null = selected && !detailDispatch
     ? [selected.latitude, selected.longitude]
     : null
 
@@ -234,10 +282,11 @@ export default function DispatcherConsolePage() {
     onSceneAt:         r.onSceneAt,
   }))
 
-  // Only show route lines for resources going to the selected incident
-  const routeResources: ResourcePin[] = selected
+  const routeResources: ResourcePin[] = selected && !detailDispatch
     ? resourcePins.filter(r => r.incidentId === selected.id)
-    : []
+    : detailDispatch
+      ? resourcePins.filter(r => r.incidentId === detailDispatch.incidentId)
+      : []
 
   const canDispatch = !dispatching && (selOfficers.size + selVehicles.size) > 0
   const totalSel    = selOfficers.size + selVehicles.size
@@ -270,7 +319,6 @@ export default function DispatcherConsolePage() {
               <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{waiting.length}</span>
             </div>
 
-            {/* Search */}
             <input
               type="search"
               placeholder="Search incidents…"
@@ -322,7 +370,7 @@ export default function DispatcherConsolePage() {
           <div className="panel" style={{ padding: 12, flexShrink: 0 }}>
             <div className="panel-title" style={{ marginBottom: 8 }}>Map</div>
             {[
-              { color: '#2f6bff', label: 'Selected' },
+              { color: '#2f6bff', label: 'Selected (pulsing)' },
               { color: '#ef4444', label: 'P1 waiting' },
               { color: '#f97316', label: 'P2 waiting' },
               { color: '#eab308', label: 'P3 waiting' },
@@ -353,273 +401,336 @@ export default function DispatcherConsolePage() {
             routeResources={routeResources}
             selectedPos={selectedPos}
             radiusM={radiusM}
+            selectedIncidentId={mapHighlightId}
             onBoundsChange={handleBoundsChange}
+            onIncidentClick={handleIncidentClick}
+            onHistoryChange={handleHistoryChange}
           />
+
+          {/* Breadcrumb history bar */}
+          {histNav && histNav.total > 1 && (
+            <div style={{
+              position: 'absolute', bottom: 18, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 1000, display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(10,15,30,0.88)', border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 20, padding: '4px 10px',
+              boxShadow: '0 4px 16px rgba(0,0,0,.55)',
+              backdropFilter: 'blur(8px)',
+              userSelect: 'none',
+            }}>
+              <button
+                type="button"
+                onClick={histNav.goBack}
+                disabled={!histNav.canBack}
+                style={{
+                  background: 'none', border: 'none', padding: '2px 5px', lineHeight: 1,
+                  cursor: histNav.canBack ? 'pointer' : 'not-allowed',
+                  color: histNav.canBack ? '#a5b4fc' : '#374151',
+                  fontSize: '1rem', transition: 'color 0.15s',
+                }}>←</button>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontFamily: 'var(--mono)', minWidth: 32, textAlign: 'center' }}>
+                {histNav.pos}/{histNav.total}
+              </span>
+              <button
+                type="button"
+                onClick={histNav.goFwd}
+                disabled={!histNav.canFwd}
+                style={{
+                  background: 'none', border: 'none', padding: '2px 5px', lineHeight: 1,
+                  cursor: histNav.canFwd ? 'pointer' : 'not-allowed',
+                  color: histNav.canFwd ? '#a5b4fc' : '#374151',
+                  fontSize: '1rem', transition: 'color 0.15s',
+                }}>→</button>
+            </div>
+          )}
         </div>
 
-        {/* ── RIGHT: assign + active ── */}
+        {/* ── RIGHT ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden' }}>
 
-          {/* Assign panel */}
-          <div className="panel" style={{
-            padding: 14, flex: selected ? 1 : '0 0 auto',
-            overflowY: 'auto', minHeight: selected ? 300 : 'auto',
-          }}>
-            {!selected ? (
-              <p className="faint" style={{ fontSize: '0.84rem', textAlign: 'center', paddingTop: 20 }}>
-                Select a pending incident to assign resources.
-              </p>
-            ) : (
-              <>
-                {/* Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <div className="panel-title">Assign Resources</div>
-                  <button type="button" onClick={clearSelection}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', fontSize: '1.1rem', lineHeight: 1, padding: 0 }}>✕</button>
-                </div>
-
-                {/* Incident summary */}
-                <div style={{
-                  background: `${PRIO_COLORS[selected.priority]}18`,
-                  border: `1px solid ${PRIO_COLORS[selected.priority]}55`,
-                  borderRadius: 8, padding: '10px 14px', marginBottom: 12,
-                }}>
-                  <div style={{ fontWeight: 700, color: PRIO_COLORS[selected.priority], fontSize: '0.82rem' }}>
-                    P{selected.priority} · {fmt(selected.crimeType)}
-                  </div>
-                  <div className="mono" style={{ fontSize: '0.76rem', marginTop: 2 }}>{selected.reference}</div>
-                  <div className="faint" style={{ fontSize: '0.72rem', marginTop: 2 }}>{selected.address}, {selected.postcode}</div>
-                </div>
-
-                {/* Skill filter */}
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4 }}>Skill filter</label>
-                  <select
-                    value={skillFilter}
-                    onChange={e => setSkillFilter(e.target.value)}
-                    style={{
-                      width: '100%', padding: '7px 10px', borderRadius: 8,
-                      background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
-                      color: 'inherit', fontSize: '0.82rem', outline: 'none', cursor: 'pointer',
-                    }}
-                  >
-                    <option value="">All skills</option>
-                    {SKILLS.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
-                  </select>
-                </div>
-
-                {/* Radius slider */}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                      Search radius: <strong style={{ color: 'var(--text)' }}>{fmtRadius(radiusM, unit)}</strong>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setUnit(u => u === 'metric' ? 'imperial' : 'metric')}
-                      style={{
-                        background: 'rgba(255,255,255,0.08)', border: '1px solid var(--hair)',
-                        borderRadius: 6, padding: '2px 8px', cursor: 'pointer',
-                        color: 'var(--text-dim)', fontSize: '0.70rem',
-                      }}
-                    >{unit === 'metric' ? 'km/m' : 'mi/ft'} ⇄</button>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={20000}
-                    step={unit === 'metric' ? 50 : 30}
-                    value={radiusM}
-                    onChange={e => setRadiusM(Number(e.target.value))}
-                    style={{ width: '100%', accentColor: '#2f6bff' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.64rem', color: 'var(--text-faint)', marginTop: 2 }}>
-                    <span>{fmtRadius(1, unit)}</span>
-                    <span>{fmtRadius(20000, unit)}</span>
-                  </div>
-                </div>
-
-                {loadingRes && (
-                  <p className="faint" style={{ fontSize: '0.80rem', marginBottom: 8 }}>Loading nearby resources…</p>
-                )}
-
-                {suggested && (
+          {detailDispatch ? (
+            /* Full-height incident detail panel */
+            <div className="panel" style={{ flex: 1, overflow: 'hidden', padding: 0 }}>
+              <IncidentDetailPanel
+                dispatch={detailDispatch}
+                resourcePins={resourcePins}
+                onClose={closeDetailPanel}
+                onOnScene={handleOnScene}
+                onResolve={handleResolve}
+                onRefresh={pollActive}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Assign panel */}
+              <div className="panel" style={{
+                padding: 14, flex: selected ? 1 : '0 0 auto',
+                overflowY: 'auto', minHeight: selected ? 300 : 'auto',
+              }}>
+                {!selected ? (
+                  <p className="faint" style={{ fontSize: '0.84rem', textAlign: 'center', paddingTop: 20 }}>
+                    Select a pending incident to assign resources.<br />
+                    <span style={{ fontSize: '0.74rem', marginTop: 6, display: 'block' }}>
+                      Click any incident on the map or in the left panel.
+                    </span>
+                  </p>
+                ) : (
                   <>
-                    {/* Officers */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <div className="panel-title" style={{ margin: 0 }}>
-                        Officers
-                        <span className="faint" style={{ fontWeight: 400, marginLeft: 6 }}>({suggested.officers.length})</span>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                      <div className="panel-title">Assign Resources</div>
+                      <button type="button" onClick={clearSelection}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', fontSize: '1.1rem', lineHeight: 1, padding: 0 }}>✕</button>
+                    </div>
+
+                    {/* Incident summary */}
+                    <div style={{
+                      background: `${PRIO_COLORS[selected.priority]}18`,
+                      border: `1px solid ${PRIO_COLORS[selected.priority]}55`,
+                      borderRadius: 8, padding: '10px 14px', marginBottom: 12,
+                    }}>
+                      <div style={{ fontWeight: 700, color: PRIO_COLORS[selected.priority], fontSize: '0.82rem' }}>
+                        P{selected.priority} · {fmt(selected.crimeType)}
+                      </div>
+                      <div className="mono" style={{ fontSize: '0.76rem', marginTop: 2 }}>{selected.reference}</div>
+                      <div className="faint" style={{ fontSize: '0.72rem', marginTop: 2 }}>{selected.address}, {selected.postcode}</div>
+                    </div>
+
+                    {/* Skill filter */}
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginBottom: 4 }}>Skill filter</label>
+                      <select
+                        value={skillFilter}
+                        onChange={e => setSkillFilter(e.target.value)}
+                        style={{
+                          width: '100%', padding: '7px 10px', borderRadius: 8,
+                          background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
+                          color: 'inherit', fontSize: '0.82rem', outline: 'none', cursor: 'pointer',
+                        }}
+                      >
+                        <option value="">All skills</option>
+                        {SKILLS.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Radius slider */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                          Search radius: <strong style={{ color: 'var(--text)' }}>{fmtRadius(radiusM, unit)}</strong>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setUnit(u => u === 'metric' ? 'imperial' : 'metric')}
+                          style={{
+                            background: 'rgba(255,255,255,0.08)', border: '1px solid var(--hair)',
+                            borderRadius: 6, padding: '2px 8px', cursor: 'pointer',
+                            color: 'var(--text-dim)', fontSize: '0.70rem',
+                          }}>{unit === 'metric' ? 'km/m' : 'mi/ft'} ⇄</button>
+                      </div>
+                      <input
+                        type="range" min={1} max={20000}
+                        step={unit === 'metric' ? 50 : 30}
+                        value={radiusM}
+                        onChange={e => setRadiusM(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: '#2f6bff' }}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.64rem', color: 'var(--text-faint)', marginTop: 2 }}>
+                        <span>{fmtRadius(1, unit)}</span>
+                        <span>{fmtRadius(20000, unit)}</span>
                       </div>
                     </div>
 
-                    <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
-                      {suggested.officers.length === 0 && (
-                        <p className="faint" style={{ fontSize: '0.78rem' }}>None available in radius{skillFilter ? ` with skill ${skillFilter}` : ''}.</p>
-                      )}
-                      {suggested.officers.map(o => {
-                        const selected_ = selOfficers.has(o.id)
-                        const eta = etaMin(o.distanceM, o.mode)
-                        return (
-                          <div key={o.id} onClick={() => toggleOfficer(o.id)} style={{
-                            display: 'flex', alignItems: 'center', gap: 8,
-                            padding: '7px 9px', borderRadius: 8, marginBottom: 4, cursor: 'pointer',
-                            background: selected_ ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.03)',
-                            border: `1px solid ${selected_ ? 'rgba(34,197,94,0.5)' : 'var(--hair)'}`,
-                            transition: 'all 0.12s',
-                          }}>
-                            <div style={{
-                              width: 15, height: 15, borderRadius: 4, flexShrink: 0,
-                              background: selected_ ? '#22c55e' : 'transparent',
-                              border: `2px solid ${selected_ ? '#22c55e' : 'var(--hair)'}`,
-                            }} />
-                            <span style={{ fontSize: '1rem', lineHeight: 1 }}>{MODE_EMOJI[o.mode] ?? '🚔'}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '0.79rem', fontWeight: 600 }}>{o.name}</div>
-                              <div className="faint" style={{ fontSize: '0.69rem' }}>
-                                {o.rank} · {o.collarNumber}
-                                {o.firearms && <span style={{ color: '#ef4444', marginLeft: 4 }}>ARV</span>}
+                    {loadingRes && (
+                      <p className="faint" style={{ fontSize: '0.80rem', marginBottom: 8 }}>Loading nearby resources…</p>
+                    )}
+
+                    {suggested && (
+                      <>
+                        {/* Officers */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div className="panel-title" style={{ margin: 0 }}>
+                            Officers
+                            <span className="faint" style={{ fontWeight: 400, marginLeft: 6 }}>({suggested.officers.length})</span>
+                          </div>
+                        </div>
+
+                        <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
+                          {suggested.officers.length === 0 && (
+                            <p className="faint" style={{ fontSize: '0.78rem' }}>None available in radius{skillFilter ? ` with skill ${skillFilter}` : ''}.</p>
+                          )}
+                          {suggested.officers.map(o => {
+                            const sel_ = selOfficers.has(o.id)
+                            const eta  = etaMin(o.distanceM, o.mode)
+                            return (
+                              <div key={o.id} onClick={() => toggleOfficer(o.id)} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '7px 9px', borderRadius: 8, marginBottom: 4, cursor: 'pointer',
+                                background: sel_ ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.03)',
+                                border: `1px solid ${sel_ ? 'rgba(34,197,94,0.5)' : 'var(--hair)'}`,
+                                transition: 'all 0.12s',
+                              }}>
+                                <div style={{
+                                  width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                                  background: sel_ ? '#22c55e' : 'transparent',
+                                  border: `2px solid ${sel_ ? '#22c55e' : 'var(--hair)'}`,
+                                }} />
+                                <span style={{ fontSize: '1rem', lineHeight: 1 }}>{MODE_EMOJI[o.mode] ?? '🚔'}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '0.79rem', fontWeight: 600 }}>{o.name}</div>
+                                  <div className="faint" style={{ fontSize: '0.69rem' }}>
+                                    {o.rank} · {o.collarNumber}
+                                    {o.firearms && <span style={{ color: '#ef4444', marginLeft: 4 }}>ARV</span>}
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                  <div style={{ fontSize: '0.69rem', color: 'var(--text-dim)' }}>{distStr(o.distanceM, unit)}</div>
+                                  <div style={{ fontSize: '0.68rem', color: '#22c55e' }}>{eta} min</div>
+                                </div>
                               </div>
-                            </div>
-                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <div style={{ fontSize: '0.69rem', color: 'var(--text-dim)' }}>{distStr(o.distanceM, unit)}</div>
-                              <div style={{ fontSize: '0.68rem', color: '#22c55e' }}>{eta} min</div>
-                            </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Vehicles */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div className="panel-title" style={{ margin: 0 }}>
+                            Vehicles
+                            <span className="faint" style={{ fontWeight: 400, marginLeft: 6 }}>({suggested.vehicles.length})</span>
                           </div>
-                        )
-                      })}
-                    </div>
+                        </div>
 
-                    {/* Vehicles */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <div className="panel-title" style={{ margin: 0 }}>
-                        Vehicles
-                        <span className="faint" style={{ fontWeight: 400, marginLeft: 6 }}>({suggested.vehicles.length})</span>
-                      </div>
-                    </div>
+                        <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 14 }}>
+                          {suggested.vehicles.length === 0 && (
+                            <p className="faint" style={{ fontSize: '0.78rem' }}>None available in radius.</p>
+                          )}
+                          {suggested.vehicles.map(v => {
+                            const sel_ = selVehicles.has(v.id)
+                            const eta  = etaMin(v.distanceM, v.type)
+                            return (
+                              <div key={v.id} onClick={() => toggleVehicle(v.id)} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '7px 9px', borderRadius: 8, marginBottom: 4, cursor: 'pointer',
+                                background: sel_ ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.03)',
+                                border: `1px solid ${sel_ ? 'rgba(34,197,94,0.5)' : 'var(--hair)'}`,
+                                transition: 'all 0.12s',
+                              }}>
+                                <div style={{
+                                  width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                                  background: sel_ ? '#22c55e' : 'transparent',
+                                  border: `2px solid ${sel_ ? '#22c55e' : 'var(--hair)'}`,
+                                }} />
+                                <span style={{ fontSize: '1rem', lineHeight: 1 }}>{MODE_EMOJI[v.type] ?? '🚐'}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div className="mono" style={{ fontSize: '0.79rem', fontWeight: 600 }}>{v.identifier}</div>
+                                  <div className="faint" style={{ fontSize: '0.69rem' }}>{v.type} · {v.seats} seats · {v.stationName}</div>
+                                </div>
+                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                  <div style={{ fontSize: '0.69rem', color: 'var(--text-dim)' }}>{distStr(v.distanceM, unit)}</div>
+                                  <div style={{ fontSize: '0.68rem', color: '#22c55e' }}>{eta} min</div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
 
-                    <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 14 }}>
-                      {suggested.vehicles.length === 0 && (
-                        <p className="faint" style={{ fontSize: '0.78rem' }}>None available in radius.</p>
-                      )}
-                      {suggested.vehicles.map(v => {
-                        const selected_ = selVehicles.has(v.id)
-                        const eta = etaMin(v.distanceM, v.type)
-                        return (
-                          <div key={v.id} onClick={() => toggleVehicle(v.id)} style={{
-                            display: 'flex', alignItems: 'center', gap: 8,
-                            padding: '7px 9px', borderRadius: 8, marginBottom: 4, cursor: 'pointer',
-                            background: selected_ ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.03)',
-                            border: `1px solid ${selected_ ? 'rgba(34,197,94,0.5)' : 'var(--hair)'}`,
-                            transition: 'all 0.12s',
-                          }}>
-                            <div style={{
-                              width: 15, height: 15, borderRadius: 4, flexShrink: 0,
-                              background: selected_ ? '#22c55e' : 'transparent',
-                              border: `2px solid ${selected_ ? '#22c55e' : 'var(--hair)'}`,
-                            }} />
-                            <span style={{ fontSize: '1rem', lineHeight: 1 }}>{MODE_EMOJI[v.type] ?? '🚐'}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div className="mono" style={{ fontSize: '0.79rem', fontWeight: 600 }}>{v.identifier}</div>
-                              <div className="faint" style={{ fontSize: '0.69rem' }}>{v.type} · {v.seats} seats · {v.stationName}</div>
-                            </div>
-                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <div style={{ fontSize: '0.69rem', color: 'var(--text-dim)' }}>{distStr(v.distanceM, unit)}</div>
-                              <div style={{ fontSize: '0.68rem', color: '#22c55e' }}>{eta} min</div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {/* Dispatch button */}
-                    <button
-                      className="btn primary big"
-                      style={{ width: '100%' }}
-                      disabled={!canDispatch}
-                      onClick={handleDispatch}
-                    >
-                      {dispatching
-                        ? 'Dispatching…'
-                        : canDispatch
-                          ? `Dispatch ${totalSel} resource${totalSel === 1 ? '' : 's'}`
-                          : 'Select resources to dispatch'}
-                    </button>
+                        <button
+                          className="btn primary big"
+                          style={{ width: '100%' }}
+                          disabled={!canDispatch}
+                          onClick={handleDispatch}
+                        >
+                          {dispatching
+                            ? 'Dispatching…'
+                            : canDispatch
+                              ? `Dispatch ${totalSel} resource${totalSel === 1 ? '' : 's'}`
+                              : 'Select resources to dispatch'}
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
-              </>
-            )}
-          </div>
+              </div>
 
-          {/* Active dispatches */}
-          <div className="panel" style={{
-            padding: 14,
-            flex: selected ? '0 0 auto' : 1,
-            maxHeight: selected ? 260 : undefined,
-            overflowY: 'auto',
-          }}>
-            <div className="panel-title" style={{ marginBottom: 10 }}>
-              Active Dispatches
-              <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{active.length}</span>
-            </div>
-
-            {active.length === 0 && (
-              <p className="faint" style={{ fontSize: '0.82rem' }}>No active dispatches.</p>
-            )}
-
-            {active.map(d => (
-              <div key={d.id} style={{
-                padding: '11px 12px', borderRadius: 10, marginBottom: 8,
-                background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
+              {/* Active dispatches */}
+              <div className="panel" style={{
+                padding: 14,
+                flex: selected ? '0 0 auto' : 1,
+                maxHeight: selected ? 260 : undefined,
+                overflowY: 'auto',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  <span style={{
-                    background: PRIO_COLORS[d.priority] + '33',
-                    border: `1px solid ${PRIO_COLORS[d.priority]}`,
-                    color: PRIO_COLORS[d.priority],
-                    borderRadius: 6, padding: '1px 7px', fontSize: '0.68rem', fontWeight: 700,
-                  }}>P{d.priority}</span>
-                  <span className="mono" style={{ fontSize: '0.75rem' }}>{d.incidentRef}</span>
-                  <span style={{
-                    marginLeft: 'auto', fontSize: '0.68rem', fontWeight: 600,
-                    color: d.status === 'ON_SCENE' ? '#06b6d4' : '#22c55e',
-                  }}>{d.status === 'ON_SCENE' ? 'ON SCENE' : 'EN ROUTE'}</span>
+                <div className="panel-title" style={{ marginBottom: 10 }}>
+                  Active Dispatches
+                  <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{active.length}</span>
                 </div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 2 }}>{fmt(d.crimeType)}</div>
-                <div className="faint" style={{ fontSize: '0.70rem', marginBottom: 8 }}>{d.address}, {d.postcode}</div>
 
-                {d.resources.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 8 }}>
-                    {d.resources.map((r, i) => (
-                      <span key={i} style={{
-                        padding: '2px 7px', borderRadius: 6,
-                        background: r.type === 'OFFICER' ? 'rgba(47,107,255,0.12)' : 'rgba(234,179,8,0.12)',
-                        border: `1px solid ${r.type === 'OFFICER' ? 'rgba(47,107,255,0.4)' : 'rgba(234,179,8,0.4)'}`,
-                        fontSize: '0.68rem', fontFamily: 'var(--mono)',
-                      }}>
-                        {r.mode && (MODE_EMOJI[r.mode] ?? '')} {r.ref}
-                      </span>
-                    ))}
-                  </div>
+                {active.length === 0 && (
+                  <p className="faint" style={{ fontSize: '0.82rem' }}>No active dispatches.</p>
                 )}
 
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {d.status === 'ACTIVE' && (
-                    <button className="btn" onClick={() => handleOnScene(d.id)} style={{
-                      flex: 1, fontSize: '0.76rem', padding: '6px 0',
-                      background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.4)',
-                      color: '#06b6d4', borderRadius: 8, cursor: 'pointer',
-                    }}>On Scene</button>
-                  )}
-                  <button className="btn" onClick={() => handleResolve(d.id)} style={{
-                    flex: 1, fontSize: '0.76rem', padding: '6px 0',
-                    background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
-                    color: '#22c55e', borderRadius: 8, cursor: 'pointer',
-                  }}>Resolve</button>
-                </div>
+                {active.map(d => (
+                  <div
+                    key={d.id}
+                    onClick={() => openDispatchDetail(d)}
+                    style={{
+                      padding: '11px 12px', borderRadius: 10, marginBottom: 8, cursor: 'pointer',
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
+                      transition: 'border-color 0.15s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(47,107,255,0.4)')}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--hair)')}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                      <span style={{
+                        background: PRIO_COLORS[d.priority] + '33',
+                        border: `1px solid ${PRIO_COLORS[d.priority]}`,
+                        color: PRIO_COLORS[d.priority],
+                        borderRadius: 6, padding: '1px 7px', fontSize: '0.68rem', fontWeight: 700,
+                      }}>P{d.priority}</span>
+                      <span className="mono" style={{ fontSize: '0.75rem' }}>{d.incidentRef}</span>
+                      <span style={{
+                        marginLeft: 'auto', fontSize: '0.68rem', fontWeight: 600,
+                        color: d.status === 'ON_SCENE' ? '#06b6d4' : '#22c55e',
+                      }}>{d.status === 'ON_SCENE' ? 'ON SCENE' : 'EN ROUTE'}</span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 2 }}>{fmt(d.crimeType)}</div>
+                    <div className="faint" style={{ fontSize: '0.70rem', marginBottom: 8 }}>{d.address}, {d.postcode}</div>
+
+                    {d.resources.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 8 }}>
+                        {d.resources.map((r, i) => (
+                          <span key={i} style={{
+                            padding: '2px 7px', borderRadius: 6,
+                            background: r.type === 'OFFICER' ? 'rgba(47,107,255,0.12)' : 'rgba(234,179,8,0.12)',
+                            border: `1px solid ${r.type === 'OFFICER' ? 'rgba(47,107,255,0.4)' : 'rgba(234,179,8,0.4)'}`,
+                            fontSize: '0.68rem', fontFamily: 'var(--mono)',
+                          }}>
+                            {r.mode && (MODE_EMOJI[r.mode] ?? '')} {r.ref}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Quick-action buttons — stop click from opening detail panel */}
+                    <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                      {d.status === 'ACTIVE' && (
+                        <button className="btn" onClick={() => handleOnScene(d.id)} style={{
+                          flex: 1, fontSize: '0.76rem', padding: '6px 0',
+                          background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.4)',
+                          color: '#06b6d4', borderRadius: 8, cursor: 'pointer',
+                        }}>On Scene</button>
+                      )}
+                      <button className="btn" onClick={() => handleResolve(d.id)} style={{
+                        flex: 1, fontSize: '0.76rem', padding: '6px 0',
+                        background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
+                        color: '#22c55e', borderRadius: 8, cursor: 'pointer',
+                      }}>Resolve</button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
 
       </main>
