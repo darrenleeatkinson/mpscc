@@ -67,6 +67,43 @@ const SKILLS = [
   { code: 'INTERPRETER',      label: 'Interpreter' },
 ]
 
+// ── officer scatter (stable, deterministic by id) ─────────────────────────
+
+// Simple hash so the same resource always lands at the same scatter position.
+function hashStr(s: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return h >>> 0
+}
+function lcg(seed: number): () => number {
+  let s = seed
+  return () => { s = (Math.imul(1664525, s) + 1013904223) & 0xffffffff; return (s >>> 0) / 0x100000000 }
+}
+
+const SCATTER_MEAN_M = 900   // exponential mean — most officers within ~1.8 km of station
+
+function scatterPos(r: MovingResource): { lat: number; lon: number } {
+  if (r.dispatchStatus !== 'FREE') return { lat: r.lat, lon: r.lon }
+  const rand  = lcg(hashStr(r.id))
+  const u1    = rand(); const u2 = rand(); const u3 = rand()
+  const angle = u2 * 2 * Math.PI
+  const cosLat = Math.cos(r.lat * Math.PI / 180)
+  if (u1 < 0.05) {
+    // 5% stay at station with a tiny positional jitter (≤20 m)
+    const jitter = u3 * 20
+    return {
+      lat: r.lat + jitter * Math.cos(angle) / 111000,
+      lon: r.lon + jitter * Math.sin(angle) / (111000 * cosLat),
+    }
+  }
+  // 95%: exponential distribution — density falls off naturally away from station
+  const distM = Math.min(-Math.log(Math.max(u3, 1e-7)) * SCATTER_MEAN_M, SCATTER_MEAN_M * 5)
+  return {
+    lat: r.lat + distM * Math.cos(angle) / 111000,
+    lon: r.lon + distM * Math.sin(angle) / (111000 * cosLat),
+  }
+}
+
 function fmt(t: string) { return t?.replace(/_/g, ' ') ?? '' }
 function etaMin(distM: number, mode: string): number {
   return Math.max(1, Math.ceil(distM / (SPEED_MS[mode] ?? 1.4) / 60))
@@ -266,21 +303,24 @@ export default function DispatcherConsolePage() {
     ? [selected.latitude, selected.longitude]
     : null
 
-  const resourcePins: ResourcePin[] = moving.map(r => ({
-    id:                r.id,
-    lat:               r.lat,
-    lng:               r.lon,
-    mode:              r.mode,
-    ref:               r.ref,
-    name:              r.name,
-    dispatchStatus:    r.dispatchStatus,
-    incidentId:        r.incidentId,
-    targetLat:         r.targetLat  ?? undefined,
-    targetLng:         r.targetLon  ?? undefined,
-    dispatchCreatedAt: r.dispatchCreatedAt,
-    assignedAt:        r.assignedAt,
-    onSceneAt:         r.onSceneAt,
-  }))
+  const resourcePins: ResourcePin[] = moving.map(r => {
+    const { lat, lon } = scatterPos(r)
+    return {
+      id:                r.id,
+      lat,
+      lng:               lon,
+      mode:              r.mode,
+      ref:               r.ref,
+      name:              r.name,
+      dispatchStatus:    r.dispatchStatus,
+      incidentId:        r.incidentId,
+      targetLat:         r.targetLat  ?? undefined,
+      targetLng:         r.targetLon  ?? undefined,
+      dispatchCreatedAt: r.dispatchCreatedAt,
+      assignedAt:        r.assignedAt,
+      onSceneAt:         r.onSceneAt,
+    }
+  })
 
   const routeResources: ResourcePin[] = selected && !detailDispatch
     ? resourcePins.filter(r => r.incidentId === selected.id)

@@ -188,7 +188,7 @@ function useAnimatedResources(resources: ResourcePin[]): ResourcePin[] {
   }, [resources])
 
   useEffect(() => {
-    const id = setInterval(() => bump(n => n + 1), 100)
+    const id = setInterval(() => bump(n => n + 1), 10000)
     return () => clearInterval(id)
   }, [])
 
