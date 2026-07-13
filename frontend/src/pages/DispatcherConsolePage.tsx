@@ -137,7 +137,6 @@ export default function DispatcherConsolePage() {
   const [radiusM,      setRadiusM]      = useState(1000)
   const [unit,         setUnit]         = useState<'metric' | 'imperial'>('metric')
   const [loadingRes,   setLoadingRes]   = useState(false)
-  const [showWatch,    setShowWatch]    = useState(true)
   const [rightTab,     setRightTab]     = useState<'dispatch' | 'watch'>('dispatch')
 
   // Detail panel + map highlight
@@ -523,7 +522,7 @@ export default function DispatcherConsolePage() {
           {/* Tab: Incident Watch */}
           {rightTab === 'watch' && !detailDispatch && (
             <IncidentWatchPanel
-              onIncidentClick={(id, lat, lon) => {
+              onIncidentClick={(id) => {
                 // Try to open the active dispatch, otherwise find waiting
                 const d = active.find(a => a.incidentId === id)
                 if (d) openDispatchDetail(d)
@@ -837,7 +836,7 @@ export default function DispatcherConsolePage() {
           {rightTab === 'dispatch' && !detailDispatch && !selected && (
             <div style={{ flex: 1, overflow: 'hidden' }}>
               <IncidentWatchPanel
-                onIncidentClick={(id, lat, lon) => {
+                onIncidentClick={(id) => {
                   const d = active.find(a => a.incidentId === id)
                   if (d) openDispatchDetail(d)
                   else {
