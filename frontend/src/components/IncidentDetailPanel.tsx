@@ -9,7 +9,20 @@ export interface ActiveDispatch {
   status: string; address: string; postcode: string
   latitude: number; longitude: number; crimeType: string
   createdAt: string; onSceneAt: string | null
-  resources: { type: string; ref: string; name: string; mode?: string }[]
+  resources: {
+    drId?: number; resourceId?: number
+    type: string; ref: string; name: string; mode?: string
+  }[]
+}
+
+interface NearbyOfficer {
+  id: number; collarNumber: string; name: string; rank: string
+  mode: string; firearms: boolean; stationName: string; distanceM: number
+}
+
+interface NearbyVehicle {
+  id: number; identifier: string; type: string; seats: number
+  stationName: string; distanceM: number
 }
 
 interface IncidentNote {
@@ -90,6 +103,15 @@ export default function IncidentDetailPanel({
   const [noteMode, setNoteMode]   = useState<'text' | 'voice'>('text')
   const [noteText, setNoteText]   = useState('')
   const [savingNote, setSavingNote] = useState(false)
+
+  // Resource management state
+  const [showAddResource, setShowAddResource] = useState(false)
+  const [addResType, setAddResType]           = useState<'officer' | 'vehicle'>('officer')
+  const [nearbyOfficers, setNearbyOfficers]   = useState<NearbyOfficer[]>([])
+  const [nearbyVehicles, setNearbyVehicles]   = useState<NearbyVehicle[]>([])
+  const [loadingNearby, setLoadingNearby]     = useState(false)
+  const [removingDr, setRemovingDr]           = useState<number | null>(null)
+  const [addingRes, setAddingRes]             = useState<number | null>(null)
 
   // Voice recording state
   const [isRecording, setIsRecording]         = useState(false)
@@ -254,6 +276,51 @@ export default function IncidentDetailPanel({
     setShowNoteInput(true)
   }
 
+  // ── resource management ────────────────────────────────────────────────────
+
+  async function fetchNearby() {
+    setLoadingNearby(true)
+    try {
+      const data = await api<{ officers: NearbyOfficer[]; vehicles: NearbyVehicle[] }>(
+        `/api/dispatch/incidents/${dispatch.incidentId}/resources?radius=3000`
+      )
+      setNearbyOfficers(data.officers ?? [])
+      setNearbyVehicles(data.vehicles ?? [])
+    } catch {
+      // ignore
+    } finally {
+      setLoadingNearby(false)
+    }
+  }
+
+  async function handleRemoveResource(drId: number) {
+    setRemovingDr(drId)
+    try {
+      await api(`/api/dispatch/${dispatch.id}/resources/${drId}`, { method: 'DELETE' })
+      onRefresh()
+    } catch {
+      // ignore
+    } finally {
+      setRemovingDr(null)
+    }
+  }
+
+  async function handleAddResource(resourceId: number, type: 'officer' | 'vehicle') {
+    setAddingRes(resourceId)
+    try {
+      const body = type === 'officer'
+        ? { officerIds: [resourceId], vehicleIds: [] }
+        : { officerIds: [], vehicleIds: [resourceId] }
+      await api(`/api/dispatch/${dispatch.id}/add-resources`, { method: 'POST', body })
+      setShowAddResource(false)
+      onRefresh()
+    } catch {
+      // ignore
+    } finally {
+      setAddingRes(null)
+    }
+  }
+
   // ── derived ────────────────────────────────────────────────────────────────
 
   const prioColor = PRIO_COLORS[dispatch.priority] ?? '#6b7280'
@@ -387,9 +454,128 @@ export default function IncidentDetailPanel({
                       {status === 'ON_SCENE' ? 'On scene' : status === 'FREE' ? 'Free' : 'En route'}
                     </div>
                   </div>
+                  {r.drId != null && (
+                    <button type="button"
+                      onClick={() => handleRemoveResource(r.drId!)}
+                      disabled={removingDr === r.drId}
+                      title="Remove resource"
+                      style={{
+                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                        color: '#fca5a5', borderRadius: 5, width: 20, height: 20,
+                        cursor: 'pointer', fontSize: '0.7rem', padding: 0, lineHeight: 1,
+                        opacity: removingDr === r.drId ? 0.5 : 1, flexShrink: 0,
+                      }}>{removingDr === r.drId ? '…' : '×'}</button>
+                  )}
                 </div>
               )
             })}
+          </div>
+
+          {/* Add resource */}
+          <div style={{ marginTop: 7 }}>
+            <button type="button"
+              onClick={() => {
+                const opening = !showAddResource
+                setShowAddResource(opening)
+                if (opening) fetchNearby()
+              }}
+              style={{
+                background: showAddResource ? 'rgba(47,107,255,0.18)' : 'rgba(47,107,255,0.08)',
+                border: '1px solid rgba(47,107,255,0.4)',
+                color: '#a5b4fc', borderRadius: 7, padding: '4px 10px',
+                cursor: 'pointer', fontSize: '0.66rem', fontWeight: 600, width: '100%',
+              }}>+ Add Resource</button>
+
+            {showAddResource && (
+              <div style={{
+                marginTop: 6, padding: '10px 12px', borderRadius: 10,
+                background: 'rgba(47,107,255,0.05)', border: '1px solid rgba(47,107,255,0.22)',
+              }}>
+                <div style={{ display: 'flex', gap: 4, marginBottom: 7, alignItems: 'center' }}>
+                  {(['officer', 'vehicle'] as const).map(t => (
+                    <button key={t} type="button"
+                      onClick={() => setAddResType(t)}
+                      style={{
+                        background: addResType === t ? 'rgba(47,107,255,0.22)' : 'transparent',
+                        border: '1px solid rgba(47,107,255,0.35)',
+                        color: '#a5b4fc', borderRadius: 6, padding: '3px 9px',
+                        cursor: 'pointer', fontSize: '0.65rem', fontWeight: 600, textTransform: 'capitalize',
+                      }}>{t === 'officer' ? 'Officers' : 'Vehicles'}</button>
+                  ))}
+                  {loadingNearby && (
+                    <span className="faint" style={{ fontSize: '0.63rem', marginLeft: 4 }}>Loading…</span>
+                  )}
+                </div>
+
+                <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {addResType === 'officer' && nearbyOfficers.map(o => {
+                    const assigned = dispatch.resources.some(r => r.resourceId === o.id && r.type === 'OFFICER')
+                    return (
+                      <div key={o.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 7, padding: '5px 8px', borderRadius: 7,
+                        background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
+                        opacity: assigned ? 0.45 : 1,
+                      }}>
+                        <span style={{ fontSize: '0.82rem' }}>{MODE_EMOJI[o.mode] ?? '🚶'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.74rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {o.rank} {o.name}
+                          </div>
+                          <div className="faint mono" style={{ fontSize: '0.62rem' }}>
+                            {o.collarNumber} · {o.stationName} · {Math.round(o.distanceM)}m
+                          </div>
+                        </div>
+                        <button type="button"
+                          disabled={assigned || addingRes === o.id}
+                          onClick={() => handleAddResource(o.id, 'officer')}
+                          style={{
+                            background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
+                            color: '#86efac', borderRadius: 5, padding: '3px 8px',
+                            cursor: assigned ? 'not-allowed' : 'pointer', fontSize: '0.65rem', fontWeight: 600,
+                            opacity: assigned || addingRes === o.id ? 0.45 : 1, flexShrink: 0,
+                          }}>{assigned ? 'Assigned' : addingRes === o.id ? '…' : 'Add'}</button>
+                      </div>
+                    )
+                  })}
+                  {addResType === 'officer' && !loadingNearby && nearbyOfficers.length === 0 && (
+                    <p className="faint" style={{ fontSize: '0.73rem', margin: 0 }}>No nearby officers available.</p>
+                  )}
+
+                  {addResType === 'vehicle' && nearbyVehicles.map(v => {
+                    const assigned = dispatch.resources.some(r => r.resourceId === v.id && r.type === 'VEHICLE')
+                    return (
+                      <div key={v.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 7, padding: '5px 8px', borderRadius: 7,
+                        background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
+                        opacity: assigned ? 0.45 : 1,
+                      }}>
+                        <span style={{ fontSize: '0.82rem' }}>🚔</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.74rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {v.identifier} – {fmt(v.type)}
+                          </div>
+                          <div className="faint mono" style={{ fontSize: '0.62rem' }}>
+                            {v.seats} seats · {v.stationName} · {Math.round(v.distanceM)}m
+                          </div>
+                        </div>
+                        <button type="button"
+                          disabled={assigned || addingRes === v.id}
+                          onClick={() => handleAddResource(v.id, 'vehicle')}
+                          style={{
+                            background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
+                            color: '#86efac', borderRadius: 5, padding: '3px 8px',
+                            cursor: assigned ? 'not-allowed' : 'pointer', fontSize: '0.65rem', fontWeight: 600,
+                            opacity: assigned || addingRes === v.id ? 0.45 : 1, flexShrink: 0,
+                          }}>{assigned ? 'Assigned' : addingRes === v.id ? '…' : 'Add'}</button>
+                      </div>
+                    )
+                  })}
+                  {addResType === 'vehicle' && !loadingNearby && nearbyVehicles.length === 0 && (
+                    <p className="faint" style={{ fontSize: '0.73rem', margin: 0 }}>No nearby vehicles available.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

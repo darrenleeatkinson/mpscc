@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  MapContainer, TileLayer, Marker, Popup, Circle, Polyline,
+  MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip,
   useMap, useMapEvents,
 } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
@@ -53,6 +53,10 @@ const MODE_EMOJI: Record<string, string> = {
 }
 const LONDON: [number, number] = [51.509865, -0.118092]
 const POLL_MS = 5000
+const SPEED_MS: Record<string, number> = {
+  CAR: 8.3, VAN: 8.3, MOTORBIKE: 11.1, SCOOTER: 8.3,
+  PUSHBIKE: 5.6, FOOT: 1.4, DOG_CAR: 8.3,
+}
 
 // Module-level registry — lets cluster iconCreateFunction look up ResourcePin by id
 const RESOURCE_REGISTRY = new Map<string, ResourcePin>()
@@ -79,6 +83,23 @@ function incidentColor(i: IncidentPin): string {
   if (i.status === 'ON_SCENE')   return '#06b6d4'
   if (i.status === 'RESOLVED')   return '#9ca3af'
   return PRIO[i.priority] ?? '#6b7280'
+}
+
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function routeEtaLabel(r: ResourcePin, incPos: [number, number]): string {
+  if (r.dispatchStatus !== 'ACTIVE') return ''
+  const distM   = haversineM(r.lat, r.lng, incPos[0], incPos[1])
+  const etaMin  = Math.max(1, Math.ceil(distM / (SPEED_MS[r.mode] ?? 1.4) / 60))
+  const distStr = distM < 1000 ? `${Math.round(distM)}m` : `${(distM / 1000).toFixed(1)}km`
+  return `${r.ref} · ${distStr} · ETA ~${etaMin} min`
 }
 
 function dot(bg: string, size: number, glow = false) {
@@ -459,17 +480,22 @@ export default function IncidentMap({
           />
         )}
 
-        {/* Routes for resources going to the selected incident */}
+        {/* Routes for resources going to the selected incident — with ETA tooltip */}
         {routePins.map(r => {
           const roadRoute = osrmRoutes.get(r.id)
           const incPos: [number, number] | null = selectedPos ?? (r.targetLat != null && r.targetLng != null ? [r.targetLat, r.targetLng] : null)
           if (!incPos) return null
+          const etaLabel = routeEtaLabel(r, incPos)
           return roadRoute ? (
             <Polyline key={`rt-${r.id}`} positions={roadRoute}
-              pathOptions={{ color: '#22c55e', weight: 3, opacity: 0.75 }} />
+              pathOptions={{ color: '#22c55e', weight: 4, opacity: 0.82 }}>
+              {etaLabel && <Tooltip sticky className="">{etaLabel}</Tooltip>}
+            </Polyline>
           ) : (
             <Polyline key={`rt-${r.id}`} positions={[[r.lat, r.lng], incPos]}
-              pathOptions={{ color: '#22c55e', weight: 2, dashArray: '8 5', opacity: 0.6 }} />
+              pathOptions={{ color: '#22c55e', weight: 2, dashArray: '8 5', opacity: 0.7 }}>
+              {etaLabel && <Tooltip sticky className="">{etaLabel}</Tooltip>}
+            </Polyline>
           )
         })}
 

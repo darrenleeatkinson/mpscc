@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import IncidentMap from '../components/IncidentMap'
 import IncidentDetailPanel from '../components/IncidentDetailPanel'
+import IncidentWatchPanel from '../components/IncidentWatchPanel'
 import type { IncidentPin, ActivePin, ResourcePin, MapBounds, HistoryNav } from '../components/IncidentMap'
 import type { ActiveDispatch } from '../components/IncidentDetailPanel'
 import { api } from '../api/client'
@@ -136,6 +137,8 @@ export default function DispatcherConsolePage() {
   const [radiusM,      setRadiusM]      = useState(1000)
   const [unit,         setUnit]         = useState<'metric' | 'imperial'>('metric')
   const [loadingRes,   setLoadingRes]   = useState(false)
+  const [showWatch,    setShowWatch]    = useState(true)
+  const [rightTab,     setRightTab]     = useState<'dispatch' | 'watch'>('dispatch')
 
   // Detail panel + map highlight
   const [detailDispatch, setDetailDispatch] = useState<ActiveDispatch | null>(null)
@@ -185,7 +188,7 @@ export default function DispatcherConsolePage() {
 
   useEffect(() => {
     pollWaiting(); pollActive(); pollMoving()
-    const id = setInterval(() => { pollWaiting(); pollActive(); pollMoving() }, 5000)
+    const id = setInterval(() => { pollWaiting(); pollActive(); pollMoving() }, 10_000)
     return () => clearInterval(id)
   }, [pollWaiting, pollActive, pollMoving])
 
@@ -337,9 +340,38 @@ export default function DispatcherConsolePage() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <TopBar tag="DISPATCHER" />
 
+      {/* Auto-dispatch active banner */}
+      <div style={{
+        background: 'rgba(34,197,94,0.07)', borderBottom: '1px solid rgba(34,197,94,0.18)',
+        padding: '5px 16px', display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: '0.72rem', color: '#4ade80', flexShrink: 0,
+      }}>
+        <span style={{
+          width: 7, height: 7, borderRadius: '50%', background: '#22c55e',
+          boxShadow: '0 0 5px #22c55e', animation: 'pulse 2s infinite', flexShrink: 0,
+        }} />
+        <span>
+          Auto-Dispatch active — {waiting.length} waiting · {active.length} active
+          {active.length > 0 && ` · ${active.filter(d => d.status === 'ON_SCENE').length} on scene`}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {(['dispatch', 'watch'] as const).map(tab => (
+            <button key={tab} onClick={() => setRightTab(tab)} style={{
+              background: rightTab === tab ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
+              border: `1px solid ${rightTab === tab ? 'rgba(34,197,94,0.5)' : 'var(--hair)'}`,
+              borderRadius: 6, padding: '2px 10px', cursor: 'pointer',
+              color: rightTab === tab ? '#4ade80' : 'var(--text-faint)',
+              fontSize: '0.70rem', fontWeight: 600, textTransform: 'capitalize',
+            }}>
+              {tab === 'watch' ? '⚡ Incident Watch' : '🚨 Dispatch'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {flash && (
         <div style={{
-          position: 'fixed', top: 70, right: 24, zIndex: 1000,
+          position: 'fixed', top: 90, right: 24, zIndex: 1000,
           background: 'linear-gradient(135deg,rgba(34,197,94,.18),rgba(34,197,94,.08))',
           border: '1px solid rgba(34,197,94,.45)', borderRadius: 12, padding: '12px 18px',
           color: '#bbf7d0', fontWeight: 600, fontSize: '0.88rem',
@@ -348,7 +380,7 @@ export default function DispatcherConsolePage() {
 
       <main style={{
         flex: 1, display: 'grid', gridTemplateColumns: '300px 1fr 420px',
-        gap: 14, padding: 14, maxHeight: 'calc(100vh - 57px)', overflow: 'hidden',
+        gap: 14, padding: 14, maxHeight: 'calc(100vh - 87px)', overflow: 'hidden',
       }}>
 
         {/* ── LEFT: incident queue ── */}
@@ -372,7 +404,7 @@ export default function DispatcherConsolePage() {
               }}
             />
 
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
               {filtered.length === 0 && (
                 <p className="faint" style={{ fontSize: '0.82rem' }}>
                   {search ? 'No matches.' : 'No incidents waiting.'}
@@ -488,7 +520,35 @@ export default function DispatcherConsolePage() {
         {/* ── RIGHT ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden' }}>
 
-          {detailDispatch ? (
+          {/* Tab: Incident Watch */}
+          {rightTab === 'watch' && !detailDispatch && (
+            <IncidentWatchPanel
+              onIncidentClick={(id, lat, lon) => {
+                // Try to open the active dispatch, otherwise find waiting
+                const d = active.find(a => a.incidentId === id)
+                if (d) openDispatchDetail(d)
+                else {
+                  const w = waiting.find(x => x.id === id)
+                  if (w) selectIncident(w)
+                }
+              }}
+            />
+          )}
+
+          {rightTab === 'watch' && detailDispatch && (
+            <div className="panel" style={{ flex: 1, overflow: 'hidden', padding: 0 }}>
+              <IncidentDetailPanel
+                dispatch={detailDispatch}
+                resourcePins={resourcePins}
+                onClose={closeDetailPanel}
+                onOnScene={handleOnScene}
+                onResolve={handleResolve}
+                onRefresh={pollActive}
+              />
+            </div>
+          )}
+
+          {rightTab === 'dispatch' && detailDispatch ? (
             /* Full-height incident detail panel */
             <div className="panel" style={{ flex: 1, overflow: 'hidden', padding: 0 }}>
               <IncidentDetailPanel
@@ -504,8 +564,9 @@ export default function DispatcherConsolePage() {
             <>
               {/* Assign panel */}
               <div className="panel" style={{
-                padding: 14, flex: selected ? 1 : '0 0 auto',
-                overflowY: 'auto', minHeight: selected ? 300 : 'auto',
+                padding: 14, flex: '0 0 auto',
+                maxHeight: selected ? '55%' : undefined,
+                overflowY: selected ? 'auto' : undefined,
               }}>
                 {!selected ? (
                   <p className="faint" style={{ fontSize: '0.84rem', textAlign: 'center', paddingTop: 20 }}>
@@ -695,8 +756,8 @@ export default function DispatcherConsolePage() {
               {/* Active dispatches */}
               <div className="panel" style={{
                 padding: 14,
-                flex: selected ? '0 0 auto' : 1,
-                maxHeight: selected ? 260 : undefined,
+                flex: 1,
+                minHeight: 0,
                 overflowY: 'auto',
               }}>
                 <div className="panel-title" style={{ marginBottom: 10 }}>
@@ -770,6 +831,22 @@ export default function DispatcherConsolePage() {
                 ))}
               </div>
             </>
+          )}
+
+          {/* When on dispatch tab and no detail panel — show incident watch as compact strip at bottom */}
+          {rightTab === 'dispatch' && !detailDispatch && !selected && (
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <IncidentWatchPanel
+                onIncidentClick={(id, lat, lon) => {
+                  const d = active.find(a => a.incidentId === id)
+                  if (d) openDispatchDetail(d)
+                  else {
+                    const w = waiting.find(x => x.id === id)
+                    if (w) selectIncident(w)
+                  }
+                }}
+              />
+            </div>
           )}
         </div>
 

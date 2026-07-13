@@ -65,6 +65,23 @@ public class DispatchController {
         return service.resolve(id);
     }
 
+    @PostMapping("/{id}/add-resources")
+    public List<Map<String, Object>> addResources(
+            @PathVariable long id,
+            @RequestBody Map<String, List<Long>> body) {
+        List<Long> officers = body.getOrDefault("officerIds", List.of());
+        List<Long> vehicles = body.getOrDefault("vehicleIds", List.of());
+        return service.addResourcesToDispatch(id, officers, vehicles);
+    }
+
+    @DeleteMapping("/{id}/resources/{drId}")
+    public ResponseEntity<Void> removeResource(
+            @PathVariable long id,
+            @PathVariable long drId) {
+        service.removeResourceFromDispatch(id, drId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/incidents/{incidentId}/notes")
     public List<Map<String, Object>> listNotes(@PathVariable long incidentId) {
         return service.listNotes(incidentId);
@@ -89,5 +106,12 @@ public class DispatchController {
         int durS  = body.containsKey("durationS") ? ((Number) body.get("durationS")).intValue() : 0;
         service.saveRoute(drId, geojson, distM, durS);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Incident Watch: recent activity feed across all incidents (last 60 events). */
+    @GetMapping("/watch")
+    public List<Map<String, Object>> watch(
+            @RequestParam(defaultValue = "60") int limit) {
+        return service.activityFeed(Math.min(limit, 100));
     }
 }
