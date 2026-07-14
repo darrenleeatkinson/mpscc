@@ -515,7 +515,8 @@ export default function IncidentMap({
         <MarkerClusterGroup
           chunkedLoading
           iconCreateFunction={buildClusterIcon}
-          maxClusterRadius={60}
+          maxClusterRadius={40}
+          disableClusteringAtZoom={16}
           spiderfyOnMaxZoom
           showCoverageOnHover={false}
         >
@@ -543,6 +544,8 @@ export default function IncidentMap({
         {/* Queued calls + unselected incidents — shared cluster */}
         <MarkerClusterGroup
           chunkedLoading
+          maxClusterRadius={40}
+          disableClusteringAtZoom={16}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           iconCreateFunction={(cluster: any) => {
             const n = cluster.getChildCount()
