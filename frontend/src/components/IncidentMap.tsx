@@ -390,35 +390,26 @@ function buildClusterIcon(cluster: any): L.DivIcon {
     .filter(Boolean) as ResourcePin[]
 
   const counts = { free: 0, enRoute: 0, onScene: 0 }
-  const modes  = new Set<string>()
   pins.forEach(p => {
-    modes.add(p.mode)
-    if (p.dispatchStatus === 'FREE')     counts.free++
+    if (p.dispatchStatus === 'FREE')          counts.free++
     else if (p.dispatchStatus === 'ACTIVE')   counts.enRoute++
     else if (p.dispatchStatus === 'ON_SCENE') counts.onScene++
   })
 
   const n     = markers.length
-  const bgCol = counts.onScene > 0 ? 'rgba(239,68,68,.92)' : counts.enRoute > 0 ? 'rgba(245,158,11,.92)' : 'rgba(34,197,94,.85)'
-  const emojis = [...modes].slice(0, 4).map(m => MODE_EMOJI[m] ?? '🚔').join('')
-
-  const dots = [
-    counts.free    > 0 ? `<span style="color:#22c55e">●${counts.free}</span>` : '',
-    counts.enRoute > 0 ? `<span style="color:#fef3c7">●${counts.enRoute}</span>` : '',
-    counts.onScene > 0 ? `<span style="color:#fca5a5">●${counts.onScene}</span>` : '',
-  ].filter(Boolean).join(' ')
+  const bgCol = counts.onScene > 0 ? 'rgba(239,68,68,.88)' : counts.enRoute > 0 ? 'rgba(245,158,11,.88)' : 'rgba(30,58,95,.85)'
+  const size  = n >= 100 ? 36 : n >= 20 ? 30 : 26
+  const fs    = n >= 100 ? 11 : 10
 
   return L.divIcon({
     className: '',
-    html: `<div style="background:${bgCol};border:2px solid white;border-radius:12px;
-               padding:4px 7px;display:flex;flex-direction:column;align-items:center;
-               box-shadow:0 2px 8px rgba(0,0,0,.5);min-width:46px;gap:1px;">
-      <div style="font-size:13px;font-weight:700;color:white;line-height:1;">${n}</div>
-      <div style="font-size:11px;line-height:1;">${emojis}</div>
-      <div style="font-size:8px;display:flex;gap:3px;">${dots}</div>
-    </div>`,
-    iconSize:    [58, 56],
-    iconAnchor:  [29, 28],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bgCol};
+               border:1.5px solid rgba(255,255,255,.7);
+               display:flex;align-items:center;justify-content:center;
+               color:white;font-weight:600;font-size:${fs}px;
+               box-shadow:0 1px 4px rgba(0,0,0,.4);">${n}</div>`,
+    iconSize:    [size, size],
+    iconAnchor:  [size / 2, size / 2],
   })
 }
 
@@ -516,7 +507,7 @@ export default function IncidentMap({
           chunkedLoading
           iconCreateFunction={buildClusterIcon}
           maxClusterRadius={40}
-          disableClusteringAtZoom={16}
+          disableClusteringAtZoom={13}
           spiderfyOnMaxZoom
           showCoverageOnHover={false}
         >
@@ -545,7 +536,7 @@ export default function IncidentMap({
         <MarkerClusterGroup
           chunkedLoading
           maxClusterRadius={40}
-          disableClusteringAtZoom={16}
+          disableClusteringAtZoom={13}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           iconCreateFunction={(cluster: any) => {
             const n = cluster.getChildCount()

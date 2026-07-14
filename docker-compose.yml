@@ -114,6 +114,16 @@ services:
       call-intake-service: { condition: service_healthy }
     restart: unless-stopped
 
+  admin-service:
+    build: { context: ., dockerfile: services/admin-service/Dockerfile }
+    environment:
+      SIMULATOR_URL: http://call-simulator-service:8089
+      DISPATCH_URL: http://dispatch-service:8086
+      JAVA_TOOL_OPTIONS: "-Xmx128m"
+    depends_on: [call-simulator-service, dispatch-service]
+    ports: ["20007:8090"]
+    restart: unless-stopped
+
   frontend:
     build: { context: ./frontend, dockerfile: Dockerfile }
     ports: ["20000:80"]
