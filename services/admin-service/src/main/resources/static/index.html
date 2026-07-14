@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MPSCC Admin Console</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --accent:    #1f6feb;
+      --accent-h:  #388bfd;
+      --success:   #238636;
+      --success-t: #2ea043;
+      --warn:      #9e6a03;
+      --warn-t:    #d29922;
+      --danger:    #da3633;
+      --danger-t:  #f85149;
+      --stat-bg:   #1c2128;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header .badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    header .subtitle {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 32px auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* ── Stats strip ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--stat-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+
+    .stat-card .label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 8px;
+    }
+
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .stat-card.warn  .value { color: var(--warn-t); }
+    .stat-card.good  .value { color: var(--success-t); }
+    .stat-card.info  .value { color: var(--accent-h); }
+
+    /* ── Panels ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .panel-header .icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .panel-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* ── Controls row ── */
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .control-label {
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+      min-width: 180px;
+    }
+
+    .slider-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      height: 4px;
+      cursor: pointer;
+    }
+
+    .slider-val {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 64px;
+      text-align: right;
+    }
+
+    /* ── Buttons ── */
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 16px;
+      transition: background .15s, opacity .15s;
+      white-space: nowrap;
+    }
+
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+    }
+    .btn-success:hover:not(:disabled) { background: var(--success-t); }
+
+    .btn-warn {
+      background: var(--warn);
+      color: #fff;
+    }
+    .btn-warn:hover:not(:disabled) { background: var(--warn-t); }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-t); }
+
+    /* ── Feedback toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text);
+      max-width: 360px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    #toast.ok   { border-color: var(--success-t); }
+    #toast.err  { border-color: var(--danger-t); }
+
+    /* ── Refresh indicator ── */
+    .refresh-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success-t);
+      display: inline-block;
+      margin-left: auto;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .3; }
+    }
+
+    @media (max-width: 700px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .control-label { min-width: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="badge">MPS</span>
+  <h1>Command &amp; Control — Admin Console</h1>
+  <span class="subtitle">Internal use only</span>
+</header>
+
+<main>
+
+  <!-- Live stats -->
+  <section>
+    <div style="display:flex;align-items:center;margin-bottom:12px;gap:8px">
+      <span style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Live System Stats</span>
+      <span class="refresh-dot" title="Auto-refreshing every 5 s"></span>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card warn">
+        <div class="label">Waiting Incidents</div>
+        <div class="value" id="s-waiting">—</div>
+      </div>
+      <div class="stat-card good">
+        <div class="label">On-Duty Officers</div>
+        <div class="value" id="s-duty">—</div>
+      </div>
+      <div class="stat-card info">
+        <div class="label">Active Dispatches</div>
+        <div class="value" id="s-active">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">On Scene</div>
+        <div class="value" id="s-scene">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Resolved (total)</div>
+        <div class="value" id="s-resolved">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Simulator rate -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="icon">&#128222;</span>
+      <h2>Call Simulator Rate</h2>
+    </div>
+    <div class="panel-body">
+      <div class="control-row">
+        <span class="control-label">Calls per minute</span>
+        <div class="slider-wrap">
+          <input type="range" id="rate-slider" min="0" max="20" step="0.5" value="2" oninput="updateRateLabel(this.value)">
+          <span class="slider-val" id="rate-val">2.0 / min</span>
+        </div>
+        <button class="btn-primary" onclick="applyRate()">Apply Rate</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">
+        Current rate from simulator: <strong id="current-rate">fetching…</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- On-duty officers -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="icon">&#128110;</span>
+      <h2>On-Duty Officer Count</h2>
+    </div>
+    <div class="panel-body">
+      <div class="control-row">
+        <span class="control-label">Target on-duty count</span>
+        <div class="slider-wrap">
+          <input type="range" id="duty-slider" min="0" max="1000" step="25" value="200" oninput="updateDutyLabel(this.value)">
+          <span class="slider-val" id="duty-val">200 officers</span>
+        </div>
+        <button class="btn-success" onclick="applyDuty()">Deploy</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">
+        Adjusts how many officers are marked ON_DUTY vs OFF_DUTY in the database.
+        Does not affect DISPATCHED or ON_SCENE officers.
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue cleanup -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="icon">&#128465;</span>
+      <h2>Incident Queue Management</h2>
+    </div>
+    <div class="panel-body">
+      <div class="control-row">
+        <span class="control-label">Age threshold (WAITING incidents)</span>
+        <div class="slider-wrap">
+          <input type="range" id="age-slider" min="5" max="240" step="5" value="60" oninput="updateAgeLabel(this.value)">
+          <span class="slider-val" id="age-val">60 min</span>
+        </div>
+        <button class="btn-warn" onclick="cleanupQueue()">Clean Up Queue</button>
+      </div>
+      <div class="control-row" style="margin-top:4px">
+        <span class="control-label">Immediate batch dispatch</span>
+        <div style="flex:1;font-size:12px;color:var(--muted)">
+          Force-dispatch up to 50 waiting incidents right now (bypasses the 2–5 min age gate).
+        </div>
+        <button class="btn-danger" onclick="batchDispatch()">Dispatch All Now</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+  // ── Label updaters ────────────────────────────────────────────────────────
+  function updateRateLabel(v)  { document.getElementById('rate-val').textContent  = parseFloat(v).toFixed(1) + ' / min'; }
+  function updateDutyLabel(v)  { document.getElementById('duty-val').textContent  = v + ' officers'; }
+  function updateAgeLabel(v)   { document.getElementById('age-val').textContent   = v + ' min'; }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer = null;
+  function showToast(msg, ok = true) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'show ' + (ok ? 'ok' : 'err');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+  }
+
+  // ── Stats refresh ─────────────────────────────────────────────────────────
+  async function refreshStats() {
+    try {
+      const r = await fetch('/admin/stats');
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      document.getElementById('s-waiting').textContent  = d.waitingIncidents  ?? '—';
+      document.getElementById('s-duty').textContent     = d.onDutyOfficers    ?? '—';
+      document.getElementById('s-active').textContent   = d.activeDispatches  ?? '—';
+      document.getElementById('s-scene').textContent    = d.onSceneDispatches ?? '—';
+      document.getElementById('s-resolved').textContent = d.resolvedTotal     ?? '—';
+    } catch(e) {
+      // silent — will retry next interval
+    }
+  }
+
+  async function refreshRate() {
+    try {
+      const r = await fetch('/admin/sim/rate');
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      const cpm = typeof d.callsPerMinute === 'number' ? d.callsPerMinute.toFixed(2) : '—';
+      document.getElementById('current-rate').textContent = cpm + ' calls/min';
+    } catch(e) {
+      document.getElementById('current-rate').textContent = 'unavailable';
+    }
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+  async function applyRate() {
+    const cpm = parseFloat(document.getElementById('rate-slider').value);
+    try {
+      const r = await fetch('/admin/sim/rate', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callsPerMinute: cpm })
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const d = await r.json();
+      showToast('Rate set to ' + (d.callsPerMinute ?? cpm).toFixed(2) + ' calls/min');
+      refreshRate();
+    } catch(e) {
+      showToast('Failed to set rate: ' + e.message, false);
+    }
+  }
+
+  async function applyDuty() {
+    const count = parseInt(document.getElementById('duty-slider').value);
+    try {
+      const r = await fetch('/admin/resources/on-duty?count=' + count, { method: 'PUT' });
+      if (!r.ok) throw new Error(await r.text());
+      const d = await r.json();
+      showToast('On-duty count set to ' + (d.onDutyCount ?? count));
+      refreshStats();
+    } catch(e) {
+      showToast('Failed to set on-duty count: ' + e.message, false);
+    }
+  }
+
+  async function cleanupQueue() {
+    const mins = parseInt(document.getElementById('age-slider').value);
+    try {
+      const r = await fetch('/admin/incidents/cleanup?olderThanMinutes=' + mins, { method: 'POST' });
+      if (!r.ok) throw new Error(await r.text());
+      const d = await r.json();
+      showToast('Cleaned up ' + (d.deleted ?? 0) + ' waiting incident(s) older than ' + mins + ' min');
+      refreshStats();
+    } catch(e) {
+      showToast('Cleanup failed: ' + e.message, false);
+    }
+  }
+
+  async function batchDispatch() {
+    try {
+      const r = await fetch('/admin/incidents/batch-dispatch?count=50', { method: 'POST' });
+      if (!r.ok) throw new Error(await r.text());
+      const d = await r.json();
+      showToast('Batch-dispatched ' + (d.dispatched ?? 0) + ' incident(s)');
+      refreshStats();
+    } catch(e) {
+      showToast('Batch dispatch failed: ' + e.message, false);
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  refreshStats();
+  refreshRate();
+  setInterval(refreshStats, 5000);
+  setInterval(refreshRate, 10000);
+</script>
+</body>
+</html>

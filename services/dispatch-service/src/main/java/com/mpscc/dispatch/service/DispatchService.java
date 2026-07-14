@@ -78,7 +78,7 @@ public class DispatchService {
                                ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)::numeric, 0) AS distance_m
                     FROM officers o
                     JOIN stations s ON s.id = o.home_station
-                    WHERE o.status NOT IN ('DISPATCHED', 'ON_SCENE')
+                    WHERE o.status = 'ON_DUTY'
                 """);
         List<Object> offParams = new ArrayList<>(List.of(lon, lat));
         if (skill != null && !skill.isBlank()) {
@@ -378,7 +378,7 @@ public class DispatchService {
                        ST_X(s.location::geometry) AS lon
                 FROM officers o
                 JOIN stations s ON s.id = o.home_station
-                WHERE o.status NOT IN ('DISPATCHED', 'ON_SCENE')
+                WHERE o.status = 'ON_DUTY'
                   AND ST_X(s.location::geometry) BETWEEN ? AND ?
                   AND ST_Y(s.location::geometry) BETWEEN ? AND ?
                 LIMIT 3000
@@ -668,6 +668,52 @@ public class DispatchService {
                     return m;
                 },
                 limit);
+    }
+
+    // ── Admin: on-duty management ─────────────────────────────────────────────
+
+    public Map<String, Object> setOnDutyCount(int target) {
+        int currentOnDuty = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM officers WHERE status = 'ON_DUTY'", Integer.class);
+        if (target > currentOnDuty) {
+            int toPromote = target - currentOnDuty;
+            jdbc.update("""
+                UPDATE officers SET status = 'ON_DUTY'
+                WHERE id IN (SELECT id FROM officers WHERE status = 'OFF_DUTY' LIMIT ?)
+                """, toPromote);
+        } else if (target < currentOnDuty) {
+            int toDemote = currentOnDuty - target;
+            jdbc.update("""
+                UPDATE officers SET status = 'OFF_DUTY'
+                WHERE id IN (SELECT id FROM officers WHERE status = 'ON_DUTY' LIMIT ?)
+                """, toDemote);
+        }
+        int actual = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM officers WHERE status = 'ON_DUTY'", Integer.class);
+        return Map.of("onDutyCount", actual);
+    }
+
+    public int cleanupWaitingIncidents(int olderThanMinutes) {
+        return jdbc.update("""
+            DELETE FROM incidents
+            WHERE status = 'WAITING'
+              AND created_at < NOW() - (? * INTERVAL '1 minute')
+            """, olderThanMinutes);
+    }
+
+    public Map<String, Object> getAdminStats() {
+        int waiting    = jdbc.queryForObject("SELECT COUNT(*) FROM incidents WHERE status = 'WAITING'", Integer.class);
+        int onDuty     = jdbc.queryForObject("SELECT COUNT(*) FROM officers WHERE status = 'ON_DUTY'", Integer.class);
+        int active     = jdbc.queryForObject("SELECT COUNT(*) FROM dispatches WHERE status = 'ACTIVE'", Integer.class);
+        int onScene    = jdbc.queryForObject("SELECT COUNT(*) FROM dispatches WHERE status = 'ON_SCENE'", Integer.class);
+        int resolved   = jdbc.queryForObject("SELECT COUNT(*) FROM dispatches WHERE status = 'RESOLVED'", Integer.class);
+        return Map.of(
+            "waitingIncidents", waiting,
+            "onDutyOfficers",   onDuty,
+            "activeDispatches", active,
+            "onSceneDispatches",onScene,
+            "resolvedTotal",    resolved
+        );
     }
 
     // ── helpers ────────────────────────────────────────────────────────────

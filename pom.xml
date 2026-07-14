@@ -33,6 +33,7 @@
         <module>services/call-intake-service</module>
         <module>services/call-simulator-service</module>
         <module>services/dispatch-service</module>
+        <module>services/admin-service</module>
     </modules>
 
     <dependencyManagement>

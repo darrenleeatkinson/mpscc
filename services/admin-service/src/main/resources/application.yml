@@ -1,0 +1,16 @@
+server:
+  port: 8090
+spring:
+  application:
+    name: admin-service
+admin:
+  simulator-url: ${SIMULATOR_URL:http://call-simulator-service:8089}
+  dispatch-url: ${DISPATCH_URL:http://dispatch-service:8086}
+logging:
+  level:
+    com.mpscc.admin: INFO
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

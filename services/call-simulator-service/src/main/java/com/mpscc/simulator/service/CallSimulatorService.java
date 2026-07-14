@@ -10,12 +10,15 @@ import java.time.ZoneId;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class CallSimulatorService {
 
     private static final Random RNG = new Random();
     private static final ZoneId LONDON = ZoneId.of("Europe/London");
+
+    private final AtomicReference<Double> runtimeIntensity = new AtomicReference<>(null);
 
     private static final double[] DEMAND = {
         0.30, 0.20, 0.15, 0.10, 0.10, 0.15,  // 00–05
@@ -86,10 +89,23 @@ public class CallSimulatorService {
         this.rest = rest;
     }
 
+    public double getCallsPerMinute() {
+        return effectiveIntensity() * (60.0 / 5.0) * 0.35;
+    }
+
+    public void setCallsPerMinute(double cpm) {
+        runtimeIntensity.set(cpm / (60.0 / 5.0) / 0.35);
+    }
+
+    private double effectiveIntensity() {
+        Double rt = runtimeIntensity.get();
+        return rt != null ? rt : intensity;
+    }
+
     @Scheduled(fixedRate = 5000)
     public void tick() {
         int hour = LocalTime.now(LONDON).getHour();
-        double probability = intensity * DEMAND[hour] * 0.35;
+        double probability = effectiveIntensity() * DEMAND[hour] * 0.35;
         if (RNG.nextDouble() < probability) {
             sendCall(generateCall());
         }

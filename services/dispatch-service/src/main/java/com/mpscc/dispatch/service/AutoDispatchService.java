@@ -68,6 +68,33 @@ public class AutoDispatchService {
         }
     }
 
+    public int dispatchNow(int maxCount) {
+        List<Map<String, Object>> waiting = jdbc.queryForList("""
+                SELECT id, priority, crime_type, injuries, weapons, suspects_on_scene, created_at
+                FROM incidents
+                WHERE status = 'WAITING'
+                ORDER BY priority ASC, created_at ASC
+                LIMIT ?
+                """, maxCount);
+
+        int dispatched = 0;
+        for (Map<String, Object> row : waiting) {
+            long incidentId  = toLong(row, "id");
+            int  priority    = toInt(row, "priority");
+            String crimeType = str(row, "crime_type");
+            boolean injuries = bool(row, "injuries");
+            boolean weapons  = bool(row, "weapons");
+            boolean suspects = bool(row, "suspects_on_scene");
+            try {
+                tryDispatch(incidentId, priority, crimeType, injuries, weapons, suspects);
+                dispatched++;
+            } catch (Exception e) {
+                log.warn("Batch dispatch failed for incident {}: {}", incidentId, e.getMessage());
+            }
+        }
+        return dispatched;
+    }
+
     private void tryDispatch(long incidentId, int priority, String crimeType,
                              boolean injuries, boolean weapons, boolean suspects) {
         try {

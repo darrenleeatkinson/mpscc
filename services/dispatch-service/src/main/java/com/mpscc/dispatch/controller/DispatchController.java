@@ -1,6 +1,7 @@
 package com.mpscc.dispatch.controller;
 
 import com.mpscc.dispatch.model.DispatchRequest;
+import com.mpscc.dispatch.service.AutoDispatchService;
 import com.mpscc.dispatch.service.DispatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,9 +14,11 @@ import java.util.Map;
 public class DispatchController {
 
     private final DispatchService service;
+    private final AutoDispatchService autoDispatch;
 
-    public DispatchController(DispatchService service) {
+    public DispatchController(DispatchService service, AutoDispatchService autoDispatch) {
         this.service = service;
+        this.autoDispatch = autoDispatch;
     }
 
     @GetMapping("/incidents/waiting")
@@ -113,5 +116,31 @@ public class DispatchController {
     public List<Map<String, Object>> watch(
             @RequestParam(defaultValue = "60") int limit) {
         return service.activityFeed(Math.min(limit, 100));
+    }
+
+    // ── Admin endpoints ────────────────────────────────────────────────────────
+
+    @GetMapping("/internal/admin/stats")
+    public Map<String, Object> adminStats() {
+        return service.getAdminStats();
+    }
+
+    @PutMapping("/internal/admin/on-duty")
+    public Map<String, Object> setOnDuty(@RequestParam int count) {
+        return service.setOnDutyCount(count);
+    }
+
+    @PostMapping("/internal/admin/cleanup")
+    public Map<String, Object> cleanup(
+            @RequestParam(defaultValue = "60") int olderThanMinutes) {
+        int deleted = service.cleanupWaitingIncidents(olderThanMinutes);
+        return Map.of("deleted", deleted, "olderThanMinutes", olderThanMinutes);
+    }
+
+    @PostMapping("/internal/admin/batch-dispatch")
+    public Map<String, Object> batchDispatch(
+            @RequestParam(defaultValue = "50") int count) {
+        int dispatched = autoDispatch.dispatchNow(count);
+        return Map.of("dispatched", dispatched, "requested", count);
     }
 }
