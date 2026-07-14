@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import TopBar from '../components/TopBar'
 import IncidentMap from '../components/IncidentMap'
 import IncidentDetailPanel from '../components/IncidentDetailPanel'
@@ -106,6 +106,16 @@ function scatterPos(r: MovingResource): { lat: number; lon: number } {
 }
 
 function fmt(t: string) { return t?.replace(/_/g, ' ') ?? '' }
+
+function pageBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    background: disabled ? 'transparent' : 'rgba(255,255,255,0.07)',
+    border: `1px solid ${disabled ? 'transparent' : 'var(--hair)'}`,
+    borderRadius: 6, padding: '3px 9px', cursor: disabled ? 'not-allowed' : 'pointer',
+    color: disabled ? 'var(--text-faint)' : 'var(--text-dim)',
+    fontSize: '0.70rem', fontWeight: 600, opacity: disabled ? 0.4 : 1, transition: 'all 0.15s',
+  }
+}
 function etaMin(distM: number, mode: string): number {
   return Math.max(1, Math.ceil(distM / (SPEED_MS[mode] ?? 1.4) / 60))
 }
@@ -138,6 +148,8 @@ export default function DispatcherConsolePage() {
   const [unit,         setUnit]         = useState<'metric' | 'imperial'>('metric')
   const [loadingRes,   setLoadingRes]   = useState(false)
   const [rightTab,     setRightTab]     = useState<'dispatch' | 'watch'>('dispatch')
+  const [leftPage,     setLeftPage]     = useState(0)
+  const [rightPage,    setRightPage]    = useState(0)
 
   // Detail panel + map highlight
   const [detailDispatch, setDetailDispatch] = useState<ActiveDispatch | null>(null)
@@ -201,6 +213,10 @@ export default function DispatcherConsolePage() {
     ).then(r => { setSuggested(r); setLoadingRes(false) })
      .catch(() => setLoadingRes(false))
   }, [selected?.id, skillFilter, debouncedRadius])
+
+  // Reset pages when content changes
+  useEffect(() => { setLeftPage(0) }, [search])
+  useEffect(() => { setRightPage(0) }, [active.length])
 
   // ── actions ───────────────────────────────────────────────────────────────
 
@@ -333,10 +349,20 @@ export default function DispatcherConsolePage() {
   const canDispatch = !dispatching && (selOfficers.size + selVehicles.size) > 0
   const totalSel    = selOfficers.size + selVehicles.size
 
+  // Pagination
+  const LEFT_PAGE_SIZE  = 7
+  const RIGHT_PAGE_SIZE = 4
+  const leftTotalPages  = Math.max(1, Math.ceil(filtered.length / LEFT_PAGE_SIZE))
+  const rightTotalPages = Math.max(1, Math.ceil(active.length / RIGHT_PAGE_SIZE))
+  const safeLeftPage    = Math.min(leftPage, leftTotalPages - 1)
+  const safeRightPage   = Math.min(rightPage, rightTotalPages - 1)
+  const pagedLeft       = filtered.slice(safeLeftPage * LEFT_PAGE_SIZE, (safeLeftPage + 1) * LEFT_PAGE_SIZE)
+  const pagedRight      = active.slice(safeRightPage * RIGHT_PAGE_SIZE, (safeRightPage + 1) * RIGHT_PAGE_SIZE)
+
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <TopBar tag="DISPATCHER" />
 
       {/* Auto-dispatch active banner */}
@@ -379,85 +405,101 @@ export default function DispatcherConsolePage() {
 
       <main style={{
         flex: 1, display: 'grid', gridTemplateColumns: '300px 1fr 420px',
-        gap: 14, padding: 14, maxHeight: 'calc(100vh - 87px)', overflow: 'hidden',
+        gap: 14, padding: 14, overflow: 'hidden', minHeight: 0,
       }}>
 
         {/* ── LEFT: incident queue ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
-          <div className="panel" style={{ padding: 14, display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            <div className="panel-title" style={{ marginBottom: 10 }}>
-              Pending Dispatch
-              <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{waiting.length}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflow: 'hidden', minHeight: 0 }}>
+          <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+            {/* Header */}
+            <div style={{ padding: '12px 14px 0', flexShrink: 0 }}>
+              <div className="panel-title" style={{ marginBottom: 8 }}>
+                Pending Dispatch
+                <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{waiting.length}</span>
+              </div>
+              <input
+                type="search"
+                placeholder="Search incidents…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{
+                  width: '100%', padding: '7px 10px', borderRadius: 8, marginBottom: 8,
+                  background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
+                  color: 'inherit', fontSize: '0.82rem', outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {/* Inline map legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', marginBottom: 8 }}>
+                {[
+                  { color: '#ef4444', label: 'P1' }, { color: '#f97316', label: 'P2' },
+                  { color: '#eab308', label: 'P3' }, { color: '#22c55e', label: 'Dispatched' },
+                  { color: '#06b6d4', label: 'On scene' },
+                ].map(({ color, label }) => (
+                  <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.66rem', color: 'var(--text-faint)' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, border: '1px solid white', display: 'inline-block', flexShrink: 0 }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
             </div>
 
-            <input
-              type="search"
-              placeholder="Search incidents…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{
-                width: '100%', padding: '7px 10px', borderRadius: 8, marginBottom: 10,
-                background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hair)',
-                color: 'inherit', fontSize: '0.82rem', outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-
-            <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-              {filtered.length === 0 && (
-                <p className="faint" style={{ fontSize: '0.82rem' }}>
+            {/* Paginated list — no scroll, fixed items */}
+            <div style={{ flex: 1, padding: '0 14px', overflow: 'hidden', minHeight: 0 }}>
+              {pagedLeft.length === 0 && (
+                <p className="faint" style={{ fontSize: '0.82rem', paddingTop: 8 }}>
                   {search ? 'No matches.' : 'No incidents waiting.'}
                 </p>
               )}
-              {filtered.map(inc => (
+              {pagedLeft.map(inc => (
                 <div
                   key={inc.id}
                   onClick={() => selectIncident(inc)}
                   style={{
-                    padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'pointer',
+                    padding: '9px 11px', borderRadius: 10, marginBottom: 5, cursor: 'pointer',
                     background: selected?.id === inc.id ? 'rgba(47,107,255,0.12)' : 'rgba(255,255,255,0.04)',
                     border: `1px solid ${selected?.id === inc.id ? 'rgba(47,107,255,0.5)' : 'var(--hair)'}`,
                     transition: 'all 0.15s',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
                     <span style={{
                       background: PRIO_COLORS[inc.priority] + '33',
                       border: `1px solid ${PRIO_COLORS[inc.priority]}`,
                       color: PRIO_COLORS[inc.priority],
-                      borderRadius: 6, padding: '1px 7px', fontSize: '0.72rem', fontWeight: 700,
+                      borderRadius: 5, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 700,
                     }}>P{inc.priority}</span>
-                    <span className="mono" style={{ fontSize: '0.76rem' }}>{inc.reference}</span>
+                    <span className="mono" style={{ fontSize: '0.72rem' }}>{inc.reference}</span>
                   </div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{fmt(inc.crimeType)}</div>
-                  <div className="faint" style={{ fontSize: '0.73rem', marginTop: 2 }}>{inc.address}</div>
-                  <div className="faint" style={{ fontSize: '0.70rem' }}>{inc.postcode}</div>
+                  <div style={{ fontSize: '0.80rem', fontWeight: 600 }}>{fmt(inc.crimeType)}</div>
+                  <div className="faint" style={{ fontSize: '0.70rem', marginTop: 1 }}>{inc.address}</div>
+                  <div className="faint" style={{ fontSize: '0.67rem' }}>{inc.postcode}</div>
                 </div>
               ))}
             </div>
-          </div>
 
-          {/* Map legend */}
-          <div className="panel" style={{ padding: 12, flexShrink: 0 }}>
-            <div className="panel-title" style={{ marginBottom: 8 }}>Map</div>
-            {[
-              { color: '#2f6bff', label: 'Selected (pulsing)' },
-              { color: '#ef4444', label: 'P1 waiting' },
-              { color: '#f97316', label: 'P2 waiting' },
-              { color: '#eab308', label: 'P3 waiting' },
-              { color: '#22c55e', label: 'Dispatched' },
-              { color: '#06b6d4', label: 'On scene' },
-            ].map(({ color, label }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, border: '1.5px solid white', flexShrink: 0 }} />
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>{label}</span>
-              </div>
-            ))}
-            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--hair)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {Object.entries(MODE_EMOJI).map(([k, v]) => (
-                <span key={k} title={k} style={{ fontSize: '0.78rem' }}>{v}</span>
-              ))}
-              <span style={{ fontSize: '0.70rem', color: 'var(--text-faint)', alignSelf: 'center', marginLeft: 4 }}>resources</span>
+            {/* Pagination bar */}
+            <div style={{
+              flexShrink: 0, padding: '8px 14px',
+              borderTop: '1px solid var(--hair)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <button
+                onClick={() => setLeftPage(p => Math.max(0, p - 1))}
+                disabled={safeLeftPage === 0}
+                style={pageBtnStyle(safeLeftPage === 0)}
+              >← Prev</button>
+              <span style={{ fontSize: '0.70rem', color: 'var(--text-faint)', fontFamily: 'var(--mono)' }}>
+                {safeLeftPage + 1} / {leftTotalPages}
+                <span style={{ marginLeft: 6, color: 'var(--text-faint)', fontSize: '0.64rem' }}>
+                  ({filtered.length} total)
+                </span>
+              </span>
+              <button
+                onClick={() => setLeftPage(p => Math.min(leftTotalPages - 1, p + 1))}
+                disabled={safeLeftPage >= leftTotalPages - 1}
+                style={pageBtnStyle(safeLeftPage >= leftTotalPages - 1)}
+              >Next →</button>
             </div>
           </div>
         </div>
@@ -752,82 +794,107 @@ export default function DispatcherConsolePage() {
                 )}
               </div>
 
-              {/* Active dispatches */}
+              {/* Active dispatches — paginated */}
               <div className="panel" style={{
-                padding: 14,
-                flex: 1,
-                minHeight: 0,
-                overflowY: 'auto',
+                display: 'flex', flexDirection: 'column',
+                flex: 1, minHeight: 0, padding: 0, overflow: 'hidden',
               }}>
-                <div className="panel-title" style={{ marginBottom: 10 }}>
-                  Active Dispatches
-                  <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{active.length}</span>
+                {/* Header */}
+                <div style={{ padding: '10px 14px 8px', flexShrink: 0, borderBottom: '1px solid var(--hair)' }}>
+                  <div className="panel-title" style={{ margin: 0 }}>
+                    Active Dispatches
+                    <span className="faint" style={{ float: 'right', fontWeight: 400 }}>{active.length}</span>
+                  </div>
                 </div>
 
-                {active.length === 0 && (
-                  <p className="faint" style={{ fontSize: '0.82rem' }}>No active dispatches.</p>
-                )}
+                {/* Paginated cards */}
+                <div style={{ flex: 1, padding: '8px 14px 0', overflow: 'hidden', minHeight: 0 }}>
+                  {pagedRight.length === 0 && (
+                    <p className="faint" style={{ fontSize: '0.82rem', paddingTop: 8 }}>No active dispatches.</p>
+                  )}
 
-                {active.map(d => (
-                  <div
-                    key={d.id}
-                    onClick={() => openDispatchDetail(d)}
-                    style={{
-                      padding: '11px 12px', borderRadius: 10, marginBottom: 8, cursor: 'pointer',
-                      background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
-                      transition: 'border-color 0.15s',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(47,107,255,0.4)')}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--hair)')}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                      <span style={{
-                        background: PRIO_COLORS[d.priority] + '33',
-                        border: `1px solid ${PRIO_COLORS[d.priority]}`,
-                        color: PRIO_COLORS[d.priority],
-                        borderRadius: 6, padding: '1px 7px', fontSize: '0.68rem', fontWeight: 700,
-                      }}>P{d.priority}</span>
-                      <span className="mono" style={{ fontSize: '0.75rem' }}>{d.incidentRef}</span>
-                      <span style={{
-                        marginLeft: 'auto', fontSize: '0.68rem', fontWeight: 600,
-                        color: d.status === 'ON_SCENE' ? '#06b6d4' : '#22c55e',
-                      }}>{d.status === 'ON_SCENE' ? 'ON SCENE' : 'EN ROUTE'}</span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 2 }}>{fmt(d.crimeType)}</div>
-                    <div className="faint" style={{ fontSize: '0.70rem', marginBottom: 8 }}>{d.address}, {d.postcode}</div>
-
-                    {d.resources.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 8 }}>
-                        {d.resources.map((r, i) => (
-                          <span key={i} style={{
-                            padding: '2px 7px', borderRadius: 6,
-                            background: r.type === 'OFFICER' ? 'rgba(47,107,255,0.12)' : 'rgba(234,179,8,0.12)',
-                            border: `1px solid ${r.type === 'OFFICER' ? 'rgba(47,107,255,0.4)' : 'rgba(234,179,8,0.4)'}`,
-                            fontSize: '0.68rem', fontFamily: 'var(--mono)',
-                          }}>
-                            {r.mode && (MODE_EMOJI[r.mode] ?? '')} {r.ref}
-                          </span>
-                        ))}
+                  {pagedRight.map(d => (
+                    <div
+                      key={d.id}
+                      onClick={() => openDispatchDetail(d)}
+                      style={{
+                        padding: '10px 11px', borderRadius: 10, marginBottom: 7, cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hair)',
+                        transition: 'border-color 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(47,107,255,0.4)')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--hair)')}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{
+                          background: PRIO_COLORS[d.priority] + '33',
+                          border: `1px solid ${PRIO_COLORS[d.priority]}`,
+                          color: PRIO_COLORS[d.priority],
+                          borderRadius: 5, padding: '1px 6px', fontSize: '0.66rem', fontWeight: 700,
+                        }}>P{d.priority}</span>
+                        <span className="mono" style={{ fontSize: '0.72rem' }}>{d.incidentRef}</span>
+                        <span style={{
+                          marginLeft: 'auto', fontSize: '0.66rem', fontWeight: 600,
+                          color: d.status === 'ON_SCENE' ? '#06b6d4' : '#22c55e',
+                        }}>{d.status === 'ON_SCENE' ? 'ON SCENE' : 'EN ROUTE'}</span>
                       </div>
-                    )}
+                      <div style={{ fontSize: '0.76rem', fontWeight: 600, marginBottom: 2 }}>{fmt(d.crimeType)}</div>
+                      <div className="faint" style={{ fontSize: '0.68rem', marginBottom: 6 }}>{d.address}, {d.postcode}</div>
 
-                    {/* Quick-action buttons — stop click from opening detail panel */}
-                    <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
-                      {d.status === 'ACTIVE' && (
-                        <button className="btn" onClick={() => handleOnScene(d.id)} style={{
-                          flex: 1, fontSize: '0.76rem', padding: '6px 0',
-                          background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.4)',
-                          color: '#06b6d4', borderRadius: 8, cursor: 'pointer',
-                        }}>On Scene</button>
+                      {d.resources.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 6 }}>
+                          {d.resources.map((r, i) => (
+                            <span key={i} style={{
+                              padding: '2px 6px', borderRadius: 5,
+                              background: r.type === 'OFFICER' ? 'rgba(47,107,255,0.12)' : 'rgba(234,179,8,0.12)',
+                              border: `1px solid ${r.type === 'OFFICER' ? 'rgba(47,107,255,0.4)' : 'rgba(234,179,8,0.4)'}`,
+                              fontSize: '0.64rem', fontFamily: 'var(--mono)',
+                            }}>
+                              {r.mode && (MODE_EMOJI[r.mode] ?? '')} {r.ref}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      <button className="btn" onClick={() => handleResolve(d.id)} style={{
-                        flex: 1, fontSize: '0.76rem', padding: '6px 0',
-                        background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
-                        color: '#22c55e', borderRadius: 8, cursor: 'pointer',
-                      }}>Resolve</button>
+
+                      <div style={{ display: 'flex', gap: 5 }} onClick={e => e.stopPropagation()}>
+                        {d.status === 'ACTIVE' && (
+                          <button className="btn" onClick={() => handleOnScene(d.id)} style={{
+                            flex: 1, fontSize: '0.70rem', padding: '5px 0',
+                            background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.4)',
+                            color: '#06b6d4', borderRadius: 7, cursor: 'pointer',
+                          }}>On Scene</button>
+                        )}
+                        <button className="btn" onClick={() => handleResolve(d.id)} style={{
+                          flex: 1, fontSize: '0.70rem', padding: '5px 0',
+                          background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)',
+                          color: '#22c55e', borderRadius: 7, cursor: 'pointer',
+                        }}>Resolve</button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+
+                {/* Pagination bar */}
+                <div style={{
+                  flexShrink: 0, padding: '7px 14px',
+                  borderTop: '1px solid var(--hair)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <button
+                    onClick={() => setRightPage(p => Math.max(0, p - 1))}
+                    disabled={safeRightPage === 0}
+                    style={pageBtnStyle(safeRightPage === 0)}
+                  >← Prev</button>
+                  <span style={{ fontSize: '0.70rem', color: 'var(--text-faint)', fontFamily: 'var(--mono)' }}>
+                    {safeRightPage + 1} / {rightTotalPages}
+                    <span style={{ marginLeft: 6, fontSize: '0.64rem' }}>({active.length} total)</span>
+                  </span>
+                  <button
+                    onClick={() => setRightPage(p => Math.min(rightTotalPages - 1, p + 1))}
+                    disabled={safeRightPage >= rightTotalPages - 1}
+                    style={pageBtnStyle(safeRightPage >= rightTotalPages - 1)}
+                  >Next →</button>
+                </div>
               </div>
             </>
           )}

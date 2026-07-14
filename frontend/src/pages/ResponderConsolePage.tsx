@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import TopBar from '../components/TopBar'
 import IncidentMap from '../components/IncidentMap'
+import IncidentWatchPanel from '../components/IncidentWatchPanel'
 import type { QueuePin, ActivePin, IncidentPin } from '../components/IncidentMap'
 import { api, ApiError } from '../api/client'
 
@@ -122,15 +123,18 @@ export default function ResponderConsolePage() {
   const [creating,   setCreating]   = useState(false)
   const [created,    setCreated]    = useState<CreatedIncident | null>(null)
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
+  const [showWatch,  setShowWatch]  = useState(true)
 
+  // Queue poll: 5 s
   useEffect(() => {
     const poll = () =>
       api<QueueStatus>('/api/intake/queue').then(setQueue).catch(() => {})
     poll()
-    const id = setInterval(poll, 3000)
+    const id = setInterval(poll, 5000)
     return () => clearInterval(id)
   }, [])
 
+  // Incidents poll: 10 s
   useEffect(() => {
     const poll = () =>
       api<IncidentRecentItem[]>('/api/incidents/recent').then(setIncidents).catch(() => {})
@@ -249,6 +253,28 @@ export default function ResponderConsolePage() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <TopBar tag="RESPONDER" />
 
+      {/* Auto-system active banner */}
+      <div style={{
+        background: 'rgba(139,92,246,0.08)', borderBottom: '1px solid rgba(139,92,246,0.2)',
+        padding: '5px 16px', display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: '0.72rem', color: '#a78bfa',
+      }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#a78bfa',
+          boxShadow: '0 0 5px #a78bfa', animation: 'pulse 2s infinite', flexShrink: 0 }} />
+        <span>CAD Auto-Confirmer active — processing calls from queue automatically</span>
+        <button
+          onClick={() => setShowWatch(v => !v)}
+          style={{
+            marginLeft: 'auto', background: showWatch ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.06)',
+            border: `1px solid ${showWatch ? 'rgba(139,92,246,0.5)' : 'var(--hair)'}`,
+            borderRadius: 6, padding: '2px 10px', cursor: 'pointer',
+            color: showWatch ? '#a78bfa' : 'var(--text-faint)', fontSize: '0.70rem', fontWeight: 600,
+          }}
+        >
+          {showWatch ? 'Hide' : 'Show'} Incident Watch
+        </button>
+      </div>
+
       {created && (
         <div
           className="fade-in"
@@ -271,15 +297,17 @@ export default function ResponderConsolePage() {
         style={{
           flex: 1,
           display: 'grid',
-          gridTemplateColumns: '260px 1fr 380px',
-          gap: 14,
-          padding: 14,
-          maxHeight: 'calc(100vh - 57px)',
+          gridTemplateColumns: showWatch
+            ? '250px 1fr 360px 280px'
+            : '250px 1fr 360px',
+          gap: 12,
+          padding: 12,
+          maxHeight: 'calc(100vh - 87px)',
           overflow: 'hidden',
         }}
       >
         {/* ── LEFT: Queue ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
           <div className="panel" style={{ padding: 16 }}>
             <div className="panel-title">Intake Queue</div>
 
@@ -361,7 +389,7 @@ export default function ResponderConsolePage() {
         </div>
 
         {/* ── RIGHT: Active Call + Assessment + Create ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
 
           {/* Active Call */}
           <div className="panel" style={{ padding: 16 }}>
@@ -519,6 +547,13 @@ export default function ResponderConsolePage() {
             {creating ? 'Creating…' : '+ Create Incident'}
           </button>
         </div>
+
+        {/* ── WATCH: Incident Watch Panel ── */}
+        {showWatch && (
+          <div style={{ overflow: 'hidden' }}>
+            <IncidentWatchPanel />
+          </div>
+        )}
       </main>
     </div>
   )

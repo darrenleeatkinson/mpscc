@@ -291,3 +291,8 @@ a:hover {
 .fade-in {
   animation: fade 0.35s ease;
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
